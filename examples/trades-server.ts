@@ -14,6 +14,9 @@ import {
   addWorkedHours,
   approveRunById,
   clockEventsForCompanyInRange,
+  findOpenPunch,
+  findOrCreateJobByName,
+  recordTrackedHours,
   computeMissingHoursNudges,
   draftWeeklyTradesRun,
   getJob,
@@ -28,6 +31,7 @@ import {
   weeklyCertifiedPayroll,
   weeklyComplianceReport,
   weeklyJobCosts,
+  withTradesDb,
   workedHoursForCompanyInRange,
   UnknownCompanyError,
   type ClockEvent,
@@ -209,6 +213,14 @@ function seedDemo(): { companyId: string; jobIds: string[]; employeeIds: string[
   saveEmployee({ ...baseEmployee('sam', 'Sam', 18), lastName: 'Summers' });
   saveWorkerProfile({ employeeId: 'sam', classificationRates: [], fringeCredits: [], employmentType: 'seasonal', seasonEndDate: '2026-03-31', phone: '+15125550103' });
 
+  // The hours log is append-only, so a seed that just adds would stack another
+  // sample week on every click. Clear this shop's job hours first — seeding
+  // the demo shop is a reset, not an additive import.
+  withTradesDb((db) => {
+    const shopJobs = new Set(Object.values(db.jobs).filter((j) => j.companyId === company.id).map((j) => j.id));
+    db.workedHours = db.workedHours.filter((h) => !shopJobs.has(h.jobId));
+  });
+
   addWorkedHours([
     { employeeId: 'joe', jobId: 'J1', date: '2026-01-05', classificationCode: 'PLUMBER', hours: 10 },
     { employeeId: 'joe', jobId: 'J1', date: '2026-01-06', classificationCode: 'PLUMBER', hours: 10 },
@@ -230,6 +242,7 @@ function runRequestFrom(companyId: string, source: Record<string, string | undef
     periodEnd: source.periodEnd ?? '',
     checkDate: source.checkDate ?? '',
     weekStartsOn: source.weekStartsOn !== undefined ? Number(source.weekStartsOn) : undefined,
+    employeeId: source.employeeId,
   };
 }
 
@@ -255,7 +268,14 @@ function summarizeRun(result: ReturnType<typeof draftWeeklyTradesRun>) {
     runId: result.run.id,
     status: result.run.status,
     checkDate: result.run.checkDate,
-    lines: result.run.lines.map((l) => ({ employeeId: l.employeeId, grossPay: l.grossPay, netPay: l.netPay })),
+    lines: result.run.lines.map((l) => {
+      let straight = 0, overtime = 0, doubleTime = 0;
+      const detail = result.employees.find((e) => e.employee.id === l.employeeId)?.prevailingWage;
+      for (const week of detail?.weeks ?? []) for (const entry of week.entries) {
+        straight += entry.straightHours; overtime += entry.overtimeHours; doubleTime += entry.doubleTimeHours;
+      }
+      return { employeeId: l.employeeId, grossPay: l.grossPay, netPay: l.netPay, hours: { straight, overtime, doubleTime } };
+    }),
     adjustments: result.employees.flatMap((e) => e.prevailingWage?.adjustments ?? []),
     roleBreakdown,
   };
@@ -485,16 +505,35 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    // Geofenced clock-in / out: verify the device's coordinates against the
-    // job's fence, record the punch (flagged if off-site), and return the check.
+    // Geofenced clock-in / out — the crew's front door. The worker types where
+    // the job is (find-or-create), an 'in' opens a tracked shift, an 'out'
+    // pairs with it and records the worked hours automatically. The owner
+    // never enters a job or an hour.
     if (method === 'POST' && path === '/api/clock') {
       const b = await readJson<{ companyId?: string; employeeId?: string; jobId?: string; type?: 'in' | 'out'; lat?: number; lng?: number; where?: string }>(req);
       const user = sessionUser(req);
       if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
       if (user.companyId !== b.companyId) return sendJson(res, 403, { error: 'That shop belongs to a different account.' });
       if (user.role === 'worker' && user.employeeId !== b.employeeId) return sendJson(res, 403, { error: 'You can only clock yourself in and out.' });
-      const job = b.jobId ? getJob(b.jobId) : null;
-      if (!job) return sendJson(res, 404, { error: `No job "${b.jobId}".` });
+      // One open 'in' per worker: block a double clock-in, and pair the 'out'
+      // with the open shift so its hours land on the timecard.
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const since = new Date(now.getTime() - 2 * 86_400_000).toISOString().slice(0, 10);
+      const recent = clockEventsForCompanyInRange(b.companyId ?? '', since, today).sort((a, b) => a.at.localeCompare(b.at));
+      const open = findOpenPunch(recent, b.employeeId ?? '');
+      if (b.type !== 'out' && open) return sendJson(res, 400, { error: `Already clocked in since ${open.at.slice(11, 16)} — clock out first.` });
+      if (b.type === 'out' && !open) return sendJson(res, 400, { error: 'You are not clocked in.' });
+      // The job: one the request names, the shift's own on clock-out, or the
+      // one the worker typed at clock-in (find-or-create — the crew names jobs).
+      let job = b.jobId ? getJob(b.jobId) : null;
+      if (b.jobId && (!job || job.companyId !== b.companyId)) return sendJson(res, 404, { error: `No job "${b.jobId}".` });
+      const where = (b.where ?? '').trim().slice(0, 120);
+      if (!job) {
+        if (b.type === 'out') job = getJob(open.jobId);
+        else if (where) job = findOrCreateJobByName(b.companyId ?? '', where, getCompany(b.companyId ?? '')?.homeState ?? 'TX');
+        else return sendJson(res, 400, { error: 'Type where the job is — a name or address — then clock in.' });
+      }
       const coords: GeoPoint | null = Number.isFinite(b.lat) && Number.isFinite(b.lng) ? { lat: Number(b.lat), lng: Number(b.lng) } : null;
       const check = verifyClockIn(job, coords);
       const event: ClockEvent = {
@@ -503,15 +542,16 @@ const server = createServer(async (req, res) => {
         employeeId: b.employeeId ?? '',
         jobId: job.id,
         type: b.type === 'out' ? 'out' : 'in',
-        at: new Date().toISOString(),
+        at: now.toISOString(),
         coords,
         onSite: check.onSite,
         distanceMeters: check.distanceMeters,
         note: check.note,
-        where: (b.where ?? '').trim().slice(0, 120) || undefined,
+        where: where || open?.where,
       };
       addClockEvent(event);
-      return sendJson(res, 201, { event, verification: check });
+      const tracked = b.type === 'out' ? recordTrackedHours(open!, event) : null;
+      return sendJson(res, 201, { event, verification: check, trackedHours: tracked?.hours ?? null });
     }
 
     const clockMatch = path.match(/^\/api\/companies\/([^/]+)\/clock$/);

@@ -145,12 +145,11 @@
     <div class="card">
       <p class="eyebrow">On the job</p>
       <h2>Clock in</h2>
-      <div style="margin-top:12px"><label>Which job?</label><select id="cJob"></select></div>
-      <div style="margin-top:10px"><label>Where is the job?</label><input id="cWhere" placeholder="Address or site — e.g. 1420 Elm St, Austin" /></div>
+      <div style="margin-top:12px"><label>Where's the job?</label><input id="cWhere" list="jobList" placeholder="Job name or address — e.g. 1420 Elm St kitchen" /><datalist id="jobList"></datalist></div>
       <div class="radar" id="radar"><div class="ping"></div><div class="site"></div></div>
       <div id="clockStatus" style="text-align:center; min-height:26px; margin-bottom:10px"></div>
       <button class="btn pine huge" id="clockInBtn">Clock In</button>
-      <button class="btn ghost block" id="clockOutBtn" style="margin-top:10px">Clock Out</button>
+      <button class="btn huge hidden" id="clockOutBtn" style="margin-top:10px; background:var(--brick); box-shadow:3px 3px 0 var(--ink)">Clock Out</button>
       <div style="text-align:center; margin-top:10px">
         <button class="btn ghost" id="offSiteBtn" style="font-size:13px; padding:7px 12px; box-shadow:2px 2px 0 var(--ink)">Try an off‑site punch (demo)</button>
       </div>
@@ -167,7 +166,7 @@
         <div class="lab">At <b id="myRate">—</b>/hr · rough gross<div class="empty" style="font-size:12px">before prevailing‑wage make‑up &amp; taxes</div></div>
         <div class="v tnum" id="weekEst">—</div>
       </div>
-      <div class="note info" style="margin-top:14px" id="payNote">Your foreman runs payroll Friday. Prevailing‑wage make‑up gets added on top of this, then taxes come out — your take‑home lands after the run.</div>
+      <div class="note info" style="margin-top:14px" id="payNote">Your foreman runs payroll Friday. Hours over 40 this week are paid at 1.5× automatically; prevailing‑wage make‑up gets added on top, then taxes come out.</div>
     </div>
 
     <!-- punches -->
@@ -228,7 +227,7 @@ async function boot() {
   let jb = [];
   try { ({ jobs: jb } = await api("GET", `/api/companies/${COMPANY}/jobs`)); } catch {}
   jobs = jb; jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
-  $("cJob").innerHTML = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)}</option>`).join("") || `<option>— no jobs yet —</option>`;
+  $("jobList").innerHTML = jobs.map((j) => `<option value="${esc(j.name)}"></option>`).join("");
   $("appBody").classList.remove("hidden");
   await selectMe(meId);
 }
@@ -257,7 +256,7 @@ async function loadWeek() {
     $("weekDays").innerHTML = dates.length ? dates.map((dt) => {
       const rows = byDay[dt];
       const hrs = rows.reduce((s, r) => s + r.hours, 0);
-      const label = rows.map((r) => (jobById[r.jobId]?.name || r.jobId) + (r.classificationCode ? ` · ${r.classificationCode.toLowerCase()}` : "")).join(", ");
+      const label = rows.map((r) => jobById[r.jobId]?.name || r.jobId).join(", ");
       return `<div class="day"><span class="dn">${esc(pretty(dt))}</span><span class="dj">${esc(label)}</span><span class="dh">${hrs}h</span></div>`;
     }).join("") : `<p class="empty">No hours logged this week yet. Clock in to start the day.</p>`;
     $("payNote").classList.toggle("hidden", (d.week.totalHours || 0) === 0);
@@ -278,12 +277,16 @@ function paintRadar(check) {
   $("clockStatus").innerHTML = `<span class="chip ${check.onSite ? "on" : "off"}">${check.onSite ? "✓ On site" : "⚠ Off site"}</span>`;
 }
 async function punch(type, coords) {
+  const where = $("cWhere").value.trim();
+  if (type === "in" && !where) { $("clockMsg").innerHTML = ""; return showErr("clockMsg", "Type where the job is first — the job name or address."); }
   $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:12px"><span class="spin"></span> Checking your location…</div>`;
   try {
-    const { verification } = await api("POST", "/api/clock", { companyId: COMPANY, employeeId: meId, jobId: $("cJob").value, where: $("cWhere").value.trim() || undefined, type, lat: coords?.lat, lng: coords?.lng });
+    const body = { companyId: COMPANY, employeeId: meId, type, lat: coords?.lat, lng: coords?.lng };
+    if (type === "in") body.where = where; // the job: yours to name — Crewtally finds it or starts it
+    const { verification, trackedHours } = await api("POST", "/api/clock", body);
     paintRadar(verification);
-    $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:10px">${type === "in" ? "Clocked in" : "Clocked out"} · ${esc(verification.note)}</div>`;
-    await loadPunches();
+    $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:10px">${type === "in" ? "Clocked in" : `Clocked out · <b>${trackedHours ?? 0}h</b> tracked this shift`} · ${esc(verification.note)}</div>`;
+    await Promise.all([loadPunches(), loadWeek()]);
   } catch (e) { showErr("clockMsg", e.message); }
 }
 function geoPunch(type) {
@@ -295,7 +298,8 @@ function geoPunch(type) {
 $("clockInBtn").addEventListener("click", () => geoPunch("in"));
 $("clockOutBtn").addEventListener("click", () => geoPunch("out"));
 $("offSiteBtn").addEventListener("click", () => {
-  const loc = jobById[$("cJob").value]?.location;
+  const job = jobs.find((j) => j.name.trim().toLowerCase() === $("cWhere").value.trim().toLowerCase());
+  const loc = job?.location;
   punch("in", loc ? { lat: loc.lat + 0.03, lng: loc.lng } : { lat: 0, lng: 0 });
 });
 
@@ -305,6 +309,15 @@ async function loadPunches() {
     const days = [...new Set([today, WEEK.end])];
     const lists = await Promise.all(days.map((d) => api("GET", `/api/companies/${COMPANY}/clock?date=${d}`).then((r) => r.events).catch(() => [])));
     const mine = lists.flat().filter((e) => e.employeeId === meId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
+    // Tracked state: an open 'in' punch means you're on the clock — show Clock Out.
+    const onClock = mine.length > 0 && mine[0].type === "in";
+    $("clockInBtn").classList.toggle("hidden", onClock);
+    $("clockOutBtn").classList.toggle("hidden", !onClock);
+    $("offSiteBtn").classList.toggle("hidden", onClock);
+    if (onClock) {
+      const e = mine[0];
+      $("clockStatus").innerHTML = `<span class="chip on">On the clock since ${esc(e.at.slice(11, 16))} — ${esc(jobById[e.jobId]?.name || e.jobId)}</span>`;
+    }
     $("punches").innerHTML = mine.length ? mine.map((e) => `<div class="punch">
       <span class="t">${e.type === "in" ? "In" : "Out"}</span>
       <span class="j">${esc(jobById[e.jobId]?.name || e.jobId)}${e.where ? " · " + esc(e.where) : ""}</span>

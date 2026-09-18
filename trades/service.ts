@@ -45,6 +45,11 @@ export interface TradesRunRequest {
   checkDate: string;
   /** ISO weekday the workweek starts on (0 = Sunday default). */
   weekStartsOn?: number;
+  /**
+   * Run one worker's pay instead of the whole crew's — the owner picks a
+   * worker and runs their paycheck. Absent = everyone with hours.
+   */
+  employeeId?: string;
 }
 
 /** Thrown when a request names a company that isn't in the payroll store. */
@@ -67,7 +72,7 @@ export function loadTradesPayRunInput(req: TradesRunRequest): TradesPayRunInput 
   const company = getCompany(req.companyId);
   if (!company) throw new UnknownCompanyError(req.companyId);
 
-  const employees = employeesForCompany(req.companyId);
+  const employees = employeesForCompany(req.companyId).filter((e) => !req.employeeId || e.id === req.employeeId);
   const profiles = employees
     .map((e) => getWorkerProfile(e.id))
     .filter((p): p is TradeWorkerProfile => p !== null);

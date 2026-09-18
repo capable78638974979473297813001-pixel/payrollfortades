@@ -366,41 +366,9 @@
   <!-- ======================= CLOCK ======================= -->
   <section class="view" id="view-clock">
     <div class="card">
-      <p class="eyebrow">Job sites</p>
-      <h2>Jobs</h2>
-      <p class="lede">Add the jobs your crew is working — workers pick one when they clock in.</p>
-      <div class="row">
-        <div class="f"><label>Job name</label><input id="jName" placeholder="Elm St kitchen remodel" /></div>
-        <div class="f sm"><label>Work state</label><input id="jState" maxlength="2" placeholder="TX" /></div>
-        <div><button class="btn sm" id="addJobBtn">Add</button></div>
-      </div>
-      <div id="jobsList" style="margin-top:14px"></div>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">On the job</p>
-      <h2>Geofenced clock-in</h2>
-      <p class="lede">Punch in from the phone. Crewtally checks you're actually at the site — a punch from the wrong place still counts, but it's flagged for the foreman.</p>
-      <div class="row" style="align-items:flex-end">
-        <div class="f"><label>Worker</label><select id="cWorker"></select></div>
-        <div class="f"><label>Job</label><select id="cJob"></select></div>
-      </div>
-      <div style="display:flex; gap:20px; align-items:center; margin-top:18px; flex-wrap:wrap">
-        <div class="radar" id="radar"><div class="site"></div></div>
-        <div style="flex:1; min-width:220px">
-          <div style="display:flex; gap:10px; flex-wrap:wrap">
-            <button class="btn pine" id="clockInBtn">Clock In</button>
-            <button class="btn ghost" id="clockOutBtn">Clock Out</button>
-          </div>
-          <button class="linkish" id="offSiteBtn">simulate an off-site punch (demo)</button>
-          <div id="clockMsg"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">Today</p>
-      <h2>Punches</h2>
+      <p class="eyebrow">Tracked automatically</p>
+      <h2>The crew's punches</h2>
+      <p class="lede">Your crew clocks in and out from the crew app, typing where the job is. Hours are tracked from their punches — they show up here and on the Payroll tab by themselves. Nothing to fill in.</p>
       <div id="punches"><p class="empty">No punches yet today.</p></div>
     </div>
   </section>
@@ -408,34 +376,31 @@
   <!-- ======================= PAYROLL ======================= -->
   <section class="view" id="view-pay">
     <div class="card">
-      <p class="eyebrow">Step 1 · this week</p>
+      <p class="eyebrow">Step 1 · tracked this week</p>
       <h2>Hours</h2>
-      <p class="lede">Week of <b>Jan 4–10, 2026</b>, paid Jan 14. One line per person, job, and day — the same person can log different <b>roles</b> at different rates in the same week.</p>
+      <p class="lede">Week of <b id="payWeekLabel">—</b>, paid <b id="payCheckLabel">—</b>. Your crew's clock-ins do the bookkeeping — every punch in and out is tracked, nothing to fill in. Pick a worker to run their paycheck.</p>
       <div class="row">
         <div class="f"><label>Worker</label><select id="hWorker"></select></div>
-        <div class="f"><label>Job</label><select id="hJob"></select></div>
-        <div class="f"><label>Role</label><input id="hRole" list="roles" placeholder="PLUMBER" /><datalist id="roles"><option value="PLUMBER"></option><option value="PLUMBER_APPRENTICE"></option><option value="FOREMAN"></option><option value="SERVICE"></option></datalist></div>
-        <div class="f sm"><label>Day</label><input id="hDate" type="date" value="2026-01-05" min="2026-01-04" max="2026-01-10" /></div>
-        <div class="f xs"><label>Hours</label><input id="hHours" type="number" min="0" step="0.5" value="8" /></div>
-        <div><button class="btn ghost sm" id="addHoursBtn">Add</button></div>
       </div>
       <table style="margin-top:14px"><tbody id="hoursBody"></tbody></table>
-      <p class="empty" id="hoursEmpty">No hours yet.</p>
+      <p class="empty" id="hoursEmpty">No hours tracked yet — they appear here the moment your crew clocks out.</p>
+      <div class="note info">Overtime is computed automatically: hours over 40 in the workweek are paid at 1.5×, on the FLSA regular rate — never unpaid.</div>
       <div class="row" style="margin-top:16px; align-items:flex-end">
         <div class="f sm"><label>Comp $/100</label><input id="wcRate" type="number" min="0" step="0.01" value="3.50" /></div>
         <div class="empty" style="flex:1">Your workers' comp rate, so we can show what each job really costs. Optional.</div>
       </div>
     </div>
 
-    <button class="btn big" id="runBtn" disabled>Run this week's payroll</button>
+    <button class="btn big" id="runBtn" disabled>Run payroll</button>
     <div id="payErr"></div>
 
     <div id="results" class="hidden" style="margin-top:22px">
       <div id="banner"></div>
 
       <div class="card">
-        <p class="eyebrow">Paychecks</p><h2>Everyone's pay</h2>
-        <table><thead><tr><th>Worker</th><th class="r">Gross</th><th class="r">Take-home</th></tr></thead><tbody id="payBody"></tbody></table>
+        <p class="eyebrow">Paychecks</p><h2>Their pay</h2>
+        <table><thead><tr><th>Worker</th><th>Hours</th><th class="r">Gross</th><th class="r">Take-home</th></tr></thead><tbody id="payBody"></tbody></table>
+        <div id="otNote"></div>
         <div id="roleBreak"></div>
       </div>
 
@@ -543,7 +508,6 @@ async function loadAll() {
   crew = employees; jobs = jb;
   jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
   crewNames = Object.fromEntries(crew.map((e) => [e.id, e.name]));
-  renderJobs();
   if (!crew.length) {
     ["todayBody","rosterCard","nudgeCard"].forEach(id=>$(id).classList.add("hidden"));
     if (IS_DEMO) { ["todaySetup","setupCard"].forEach(id=>$(id).classList.remove("hidden")); return; }
@@ -559,10 +523,7 @@ async function loadAll() {
 
   renderRoster();
   const opt = (arr, val, lab) => arr.map((x) => `<option value="${esc(x[val])}">${esc(x[lab])}</option>`).join("");
-  $("cWorker").innerHTML = opt(crew, "id", "name");
   $("hWorker").innerHTML = opt(crew, "id", "name");
-  $("cJob").innerHTML = opt(jobs, "id", "name");
-  $("hJob").innerHTML = opt(jobs, "id", "name");
   $("runBtn").disabled = false;
   await Promise.all([loadHours(), loadBilling(), loadPunches(), loadToday()]);
 }
@@ -614,21 +575,6 @@ async function loadToday() {
 }
 $("toPayBtn").addEventListener("click", () => showView("pay"));
 $("freshToCrewBtn").addEventListener("click", () => showView("crew"));
-
-// ---- jobs ----
-function renderJobs() {
-  const list = $("jobsList"); if (!list) return;
-  list.innerHTML = jobs.length
-    ? `<table><tbody>${jobs.map((j) => `<tr><td><b>${esc(j.name)}</b></td><td class="empty">${esc(j.workState)}${j.workLocality ? " · " + esc(j.workLocality) : ""}</td></tr>`).join("")}</tbody></table>`
-    : `<p class="empty">No jobs yet — add your first job above so the crew can clock in.</p>`;
-}
-$("addJobBtn").addEventListener("click", async () => {
-  const body = { companyId: COMPANY, name: $("jName").value.trim(), workState: $("jState").value.trim() };
-  if (!body.name || !/^[A-Za-z]{2}$/.test(body.workState)) return showErr("topErr", "A job name and a two-letter state are required.");
-  $("topErr").innerHTML = "";
-  try { await api("POST", "/api/jobs", body); $("jName").value = ""; $("jState").value = ""; await loadAll(); }
-  catch (e) { showErr("topErr", e.message); }
-});
 
 function renderRoster() {
   $("roster").innerHTML = crew.map((e) => {
@@ -682,48 +628,7 @@ $("nudgeBtn").addEventListener("click", async () => {
   } catch (e) { showErr("topErr", e.message); }
 });
 
-// ---- clock ----
-function paintRadar(check) {
-  const r = $("radar");
-  r.querySelector(".you")?.remove();
-  const dot = document.createElement("div");
-  dot.className = "you";
-  const onSite = check.onSite;
-  dot.style.background = onSite ? "var(--pine)" : "var(--brick)";
-  // place the "you" dot: near centre if on-site, out toward the edge if off
-  const frac = check.distanceMeters != null && check.radiusMeters ? Math.min(1.15, check.distanceMeters / (check.radiusMeters * 2)) : 0.15;
-  const ang = 0.9; const cx = 50 + Math.cos(ang) * frac * 46; const cy = 50 + Math.sin(ang) * frac * 46;
-  dot.style.left = cx + "%"; dot.style.top = cy + "%";
-  r.appendChild(dot);
-}
-async function punch(type, coords) {
-  $("clockMsg").innerHTML = `<div class="empty" style="margin-top:10px"><span class="spin"></span> Checking location…</div>`;
-  try {
-    const { verification } = await api("POST", "/api/clock", { companyId: COMPANY, employeeId: $("cWorker").value, jobId: $("cJob").value, type, lat: coords?.lat, lng: coords?.lng });
-    paintRadar(verification);
-    const cls = verification.onSite ? "on" : "off";
-    $("clockMsg").innerHTML = `<div style="margin-top:12px"><span class="chip ${cls}">${verification.onSite ? "✓ On site" : "⚠ Off site"}</span>
-      <div class="empty" style="margin-top:6px">${esc(verification.note)}</div></div>`;
-    await loadPunches();
-  } catch (e) { showErr("clockMsg", e.message); }
-}
-$("clockInBtn").addEventListener("click", () => {
-  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(
-    (p) => punch("in", { lat: p.coords.latitude, lng: p.coords.longitude }),
-    () => punch("in", null), { timeout: 4000 });
-  else punch("in", null);
-});
-$("clockOutBtn").addEventListener("click", () => {
-  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(
-    (p) => punch("out", { lat: p.coords.latitude, lng: p.coords.longitude }),
-    () => punch("out", null), { timeout: 4000 });
-  else punch("out", null);
-});
-$("offSiteBtn").addEventListener("click", () => {
-  const job = jobById[$("cJob").value];
-  const loc = job && job.location;
-  punch("in", loc ? { lat: loc.lat + 0.03, lng: loc.lng } : { lat: 0, lng: 0 });
-});
+// ---- punches (read-only: the crew punches in from their own app) ----
 async function loadPunches() {
   try {
     const { events } = await api("GET", `/api/companies/${COMPANY}/clock?date=${WEEK.checkDate}`);
@@ -740,34 +645,28 @@ async function loadPunches() {
   } catch {}
 }
 
-// ---- hours ----
+// ---- hours (tracked from the crew's punches) ----
 async function loadHours() {
   const { entries } = await api("GET", `/api/companies/${COMPANY}/hours?start=${WEEK.periodStart}&end=${WEEK.periodEnd}`);
   $("hoursBody").innerHTML = entries.sort((a, b) => a.date.localeCompare(b.date)).map((e) =>
-    `<tr><td>${esc(who(e.employeeId))}</td><td class="empty">${esc(jobById[e.jobId]?.name || e.jobId)}</td><td>${esc(e.classificationCode)}</td><td class="empty">${esc(e.date)}</td><td class="r tnum">${e.hours}h</td></tr>`
+    `<tr><td>${esc(who(e.employeeId))}</td><td class="empty">${esc(jobById[e.jobId]?.name || e.jobId)}</td><td class="empty">${esc(e.date)}</td><td class="r tnum">${e.hours}h</td></tr>`
   ).join("");
   $("hoursEmpty").classList.toggle("hidden", entries.length > 0);
 }
-$("addHoursBtn").addEventListener("click", async () => {
-  const entry = { employeeId: $("hWorker").value, jobId: $("hJob").value, classificationCode: ($("hRole").value || "").trim().toUpperCase(), date: $("hDate").value, hours: parseFloat($("hHours").value) };
-  if (!entry.employeeId || !entry.jobId || !entry.classificationCode || !entry.date || !(entry.hours > 0)) return showErr("payErr", "Fill in worker, job, role, day, and hours.");
-  $("payErr").innerHTML = "";
-  try { await api("POST", "/api/hours", { entries: [entry] }); await loadHours(); } catch (e) { showErr("payErr", e.message); }
-});
 
-// ---- run ----
+// ---- run: the selected worker's paycheck, drafted from tracked hours ----
 $("runBtn").addEventListener("click", async () => {
   $("payErr").innerHTML = ""; const b = $("runBtn");
   b.disabled = true; b.innerHTML = `<span class="spin"></span> Running…`;
   try {
     const wc = parseFloat($("wcRate").value);
-    const payload = { ...WEEK }; if (wc > 0) payload.wcRatePerHundred = wc;
+    const payload = { ...WEEK, employeeId: $("hWorker").value }; if (wc > 0) payload.wcRatePerHundred = wc;
     const data = await api("POST", `/api/companies/${COMPANY}/run-week`, payload);
     renderResults(data);
     $("results").classList.remove("hidden");
     $("results").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { showErr("payErr", e.message); }
-  finally { b.disabled = false; b.textContent = "Run this week's payroll"; }
+  finally { b.disabled = false; b.textContent = "Run payroll"; }
 });
 
 function renderResults(data) {
@@ -781,7 +680,21 @@ function renderResults(data) {
     $("banner").innerHTML = `<span class="ic">✅</span><div><div class="h">All clear</div><div>${data.run.lines.length} paycheck(s) ready to send.</div></div>`;
   }
 
-  $("payBody").innerHTML = data.run.lines.map((l) => `<tr><td>${esc(who(l.employeeId))}</td><td class="r tnum">${money(l.grossPay)}</td><td class="r tnum">${money(l.netPay)}</td></tr>`).join("");
+  $("payBody").innerHTML = data.run.lines.map((l) => {
+    const h = l.hours || {};
+    const hrs = (h.straight || h.overtime || h.doubleTime)
+      ? `${h.straight}h${h.overtime ? ` + ${h.overtime}h OT` : ""}${h.doubleTime ? ` + ${h.doubleTime}h DT` : ""}`
+      : "—";
+    return `<tr><td>${esc(who(l.employeeId))}</td><td class="tnum">${hrs}</td><td class="r tnum">${money(l.grossPay)}</td><td class="r tnum">${money(l.netPay)}</td></tr>`;
+  }).join("");
+
+  // Overtime, made visible: hours over 40 this week, priced at 1.5× on the
+  // FLSA regular rate across every job the worker touched.
+  const ot = data.run.lines.reduce((s, l) => s + ((l.hours && l.hours.overtime) || 0), 0);
+  const dt = data.run.lines.reduce((s, l) => s + ((l.hours && l.hours.doubleTime) || 0), 0);
+  $("otNote").innerHTML = ot || dt
+    ? `<div class="note info" style="margin-top:12px"><b>Overtime included:</b> ${ot} h over 40 paid at 1.5×${dt ? ` plus ${dt} h double time` : ""} — computed on the FLSA regular rate, across all jobs, so it's compliant by construction.</div>`
+    : "";
 
   // split-rate / multi-role
   const multi = (data.run.roleBreakdown || []).filter((e) => e.roles.length > 1);
@@ -847,6 +760,9 @@ $("logoutLink").addEventListener("click", async (ev) => {
   COMPANY = me.user.companyId;
   IS_DEMO = !!me.demo;
   WEEK = IS_DEMO ? DEMO_WEEK : currentWeek();
+  const fd = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  $("payWeekLabel").textContent = `${fd(WEEK.periodStart)}–${fd(WEEK.periodEnd)}, ${WEEK.periodEnd.slice(0, 4)}`;
+  $("payCheckLabel").textContent = fd(WEEK.checkDate);
   $("shopTag").textContent = `Owner · ${me.company ? me.company.name : "your shop"}`;
   $("joinCode").textContent = me.joinCode;
   if (!IS_DEMO) ["seedBtn", "seedBtn2"].forEach((id) => $(id)?.closest(".card").classList.add("hidden"));

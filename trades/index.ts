@@ -74,6 +74,14 @@ export type { ApprenticeRatioDayFinding, ApprenticeshipProgram } from './apprent
 export { distanceMeters, verifyClockIn } from './geofence.ts';
 export type { ClockEvent, ClockVerification, GeoPoint } from './geofence.ts';
 
+export {
+  TRACKED_CLASSIFICATION_CODE,
+  findOpenPunch,
+  findOrCreateJobByName,
+  punchHours,
+  recordTrackedHours,
+} from './clockTracking.ts';
+
 export { computeMissingHoursNudges, consoleNudgeSender, renderNudgeText, sendNudges } from './nudge.ts';
 export type { NudgeCandidate, NudgeSendResult, NudgeSender, NudgeWorker } from './nudge.ts';
 
