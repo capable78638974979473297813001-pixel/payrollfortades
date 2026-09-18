@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { dollars } from '../src/money.ts';
 import { freshYearToDate } from '../payroll/ytd.ts';
 import { activeEmployeesFor } from '../payroll/run.ts';
-import { employeesForCompany, getCompany, saveCompany, saveEmployee, saveEmployees } from '../payroll/store.ts';
+import { employeesForCompany, getCompany, getPayRun, saveCompany, saveEmployee, saveEmployees } from '../payroll/store.ts';
 import type { Company, Employee } from '../payroll/types.ts';
 import {
   addClockEvent,
@@ -39,6 +39,18 @@ import {
   type WorkedHours,
   type WorkersCompRating,
 } from '../trades/index.ts';
+import {
+  AuthError,
+  createSession,
+  ensureDemoOwner,
+  joinCodeForCompany,
+  logIn,
+  logOut,
+  sessionUserFor,
+  signUpOwner,
+  signUpWorker,
+  type AuthUser,
+} from '../trades/auth.ts';
 
 /**
  * Crewtally — the server for the self-serve trades payroll app. A thin JSON
@@ -94,6 +106,32 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
   } catch {
     throw new Error('Request body must be valid JSON.');
   }
+}
+
+// ---- sessions ----
+// Opaque server-side tokens (trades/auth.ts) carried by a plain HttpOnly cookie —
+// same-origin here, so the browser sends it on every API call automatically.
+
+const SESSION_COOKIE = 'crewtally_session';
+
+function cookieValue(req: IncomingMessage, name: string): string | null {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return null;
+}
+function sessionUser(req: IncomingMessage): AuthUser | null {
+  const token = cookieValue(req, SESSION_COOKIE);
+  return token ? sessionUserFor(token) : null;
+}
+function setSessionCookie(res: ServerResponse, token: string): void {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
+}
+function clearSessionCookie(res: ServerResponse): void {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 /** A demo plumbing shop, one journeyman, one apprentice, a public and a private job, and a week of hours — enough to exercise every route end to end. */
@@ -240,16 +278,70 @@ const server = createServer(async (req, res) => {
     if (method === 'GET' && (path === '/me' || path === '/crew' || path === '/worker')) {
       return sendHtml(res, 'trades-employee.html');
     }
+    if (method === 'GET' && (path === '/login' || path === '/signin' || path === '/signup' || path === '/register')) {
+      return sendHtml(res, 'trades-login.html');
+    }
     if (method === 'POST' && path === '/api/demo/seed') {
-      return sendJson(res, 200, seedDemo());
+      const seed = seedDemo();
+      // The demo walks in as the sample shop's owner, so the console works out of the box.
+      setSessionCookie(res, createSession(ensureDemoOwner().id));
+      return sendJson(res, 200, seed);
+    }
+
+    // ---- accounts ----
+    if (method === 'POST' && path === '/api/auth/signup') {
+      const b = await readJson<{
+        email?: string; password?: string; name?: string; role?: string;
+        shopName?: string; homeState?: string; ein?: string; joinCode?: string; hourlyRate?: number;
+      }>(req);
+      const user = b.role === 'worker'
+        ? signUpWorker({ email: b.email ?? '', password: b.password ?? '', name: b.name ?? '', joinCode: b.joinCode ?? '', hourlyRate: Number(b.hourlyRate ?? 25) })
+        : signUpOwner({ email: b.email ?? '', password: b.password ?? '', name: b.name ?? '', shopName: b.shopName ?? '', homeState: b.homeState, ein: b.ein });
+      setSessionCookie(res, createSession(user.id));
+      return sendJson(res, 201, { user: { id: user.id, name: user.name, role: user.role, companyId: user.companyId } });
+    }
+    if (method === 'POST' && path === '/api/auth/login') {
+      const b = await readJson<{ email?: string; password?: string }>(req);
+      try {
+        const user = logIn(b.email ?? '', b.password ?? '');
+        setSessionCookie(res, createSession(user.id));
+        return sendJson(res, 200, { user: { id: user.id, name: user.name, role: user.role, companyId: user.companyId } });
+      } catch (err) {
+        if (err instanceof AuthError) return sendJson(res, 401, { error: err.message });
+        throw err;
+      }
+    }
+    if (method === 'POST' && path === '/api/auth/logout') {
+      const token = cookieValue(req, SESSION_COOKIE);
+      if (token) logOut(token);
+      clearSessionCookie(res);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (method === 'GET' && path === '/api/auth/me') {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Not signed in.' });
+      const company = getCompany(user.companyId);
+      return sendJson(res, 200, {
+        user: { id: user.id, name: user.name, email: user.email, role: user.role, companyId: user.companyId, employeeId: user.employeeId ?? null },
+        company: company ? { id: company.id, name: company.legalName } : null,
+        joinCode: joinCodeForCompany(user.companyId),
+        demo: user.companyId === 'shop-1',
+      });
     }
     if (method === 'POST' && path === '/api/determinations') {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can change shop data.' });
       const det = await readJson<WageDetermination>(req);
       saveWageDetermination(det);
       return sendJson(res, 201, { ok: true, id: det.id });
     }
     if (method === 'POST' && path === '/api/jobs') {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can change shop data.' });
       const job = await readJson<Job>(req);
+      if (job.companyId !== user.companyId) return sendJson(res, 403, { error: 'That job belongs to a different shop.' });
       saveJob(job);
       return sendJson(res, 201, { ok: true, id: job.id });
     }
@@ -259,9 +351,24 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 201, { ok: true, employeeId: profile.employeeId });
     }
     if (method === 'POST' && path === '/api/hours') {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can change shop data.' });
       const body = await readJson<{ entries: WorkedHours[] }>(req);
+      for (const entry of body.entries ?? []) {
+        if (getJob(entry.jobId)?.companyId !== user.companyId) return sendJson(res, 403, { error: 'Those hours belong to a different shop.' });
+      }
       addWorkedHours(body.entries ?? []);
       return sendJson(res, 201, { ok: true, added: body.entries?.length ?? 0 });
+    }
+
+    // Everything under /api/companies/:id/… is that shop's data — served only
+    // to a signed-in account OF that shop.
+    const shopMatch = path.match(/^\/api\/companies\/([^/]+)(?:\/|$)/);
+    if (shopMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.companyId !== decodeURIComponent(shopMatch[1])) return sendJson(res, 403, { error: 'That shop belongs to a different account.' });
     }
 
     const jobsMatch = path.match(/^\/api\/companies\/([^/]+)\/jobs$/);
@@ -283,6 +390,10 @@ const server = createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'companyId, firstName and a positive hourlyRate are required.' });
       }
       if (!getCompany(companyId)) return sendJson(res, 404, { error: `No company "${companyId}".` });
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can add crew.' });
+      if (companyId !== user.companyId) return sendJson(res, 403, { error: 'That shop belongs to a different account.' });
       const id = `emp_${randomUUID().slice(0, 8)}`;
       const employee: Employee = {
         id, companyId, firstName, lastName: (b.lastName ?? '').trim() || 'Crew',
@@ -334,6 +445,9 @@ const server = createServer(async (req, res) => {
       const employeeId = decodeURIComponent(meMatch[2]);
       const emp = employeesForCompany(companyId).find((e) => e.id === employeeId);
       if (!emp) return sendJson(res, 404, { error: `No worker "${employeeId}".` });
+      // A worker only ever pulls their own week — never a roster-mate's.
+      const user = sessionUser(req);
+      if (user?.role === 'worker' && user.employeeId !== employeeId) return sendJson(res, 403, { error: 'You can only view your own week.' });
       const profile = getWorkerProfile(employeeId);
       const start = params.start ?? '';
       const end = params.end ?? '';
@@ -366,6 +480,10 @@ const server = createServer(async (req, res) => {
     // job's fence, record the punch (flagged if off-site), and return the check.
     if (method === 'POST' && path === '/api/clock') {
       const b = await readJson<{ companyId?: string; employeeId?: string; jobId?: string; type?: 'in' | 'out'; lat?: number; lng?: number }>(req);
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.companyId !== b.companyId) return sendJson(res, 403, { error: 'That shop belongs to a different account.' });
+      if (user.role === 'worker' && user.employeeId !== b.employeeId) return sendJson(res, 403, { error: 'You can only clock yourself in and out.' });
       const job = b.jobId ? getJob(b.jobId) : null;
       if (!job) return sendJson(res, 404, { error: `No job "${b.jobId}".` });
       const coords: GeoPoint | null = Number.isFinite(b.lat) && Number.isFinite(b.lng) ? { lat: Number(b.lat), lng: Number(b.lng) } : null;
@@ -457,6 +575,10 @@ const server = createServer(async (req, res) => {
 
     const approveMatch = path.match(/^\/api\/runs\/([^/]+)\/approve$/);
     if (method === 'POST' && approveMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      const run = getPayRun(decodeURIComponent(approveMatch[1]));
+      if (!run || run.companyId !== user.companyId) return sendJson(res, 403, { error: 'That run belongs to a different shop.' });
       const approved = approveRunById(decodeURIComponent(approveMatch[1]));
       return sendJson(res, 200, { runId: approved.run.id, status: approved.run.status, employeesUpdated: approved.updatedEmployees.length });
     }

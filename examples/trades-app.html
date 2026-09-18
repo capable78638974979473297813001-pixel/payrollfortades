@@ -255,10 +255,10 @@
       </svg>
       <span>
         <span class="word">Crew<b>tally</b></span>
-        <div class="tag">Owner console</div>
+        <div class="tag" id="shopTag">Owner console</div>
       </span>
     </a>
-    <a class="crew-link" href="/me" title="Open the crew app">Crew app ↗</a>
+    <a class="crew-link" href="/login" id="logoutLink" title="Sign out">Log out ↗</a>
     <div class="bill-pill" id="billPill" title="Your plan">
       <span id="billCrew">—</span> crew · <span class="amt tnum" id="billAmt">—</span>/mo
     </div>
@@ -276,6 +276,13 @@
 
   <!-- ======================= TODAY ======================= -->
   <section class="view on" id="view-today">
+    <div class="card hidden" id="freshStart">
+      <p class="eyebrow">Get started</p>
+      <h2>Welcome to your shop</h2>
+      <p class="lede">There's no crew on the books yet. Add your first worker — or share your join code on the Crew tab and let them sign up themselves.</p>
+      <button class="btn" id="freshToCrewBtn">Open the Crew tab →</button>
+    </div>
+
     <div class="card" id="todaySetup">
       <p class="eyebrow">Get started</p>
       <h2>Load a sample shop</h2>
@@ -320,6 +327,13 @@
       <h2>Roster</h2>
       <p class="lede">Regular crew and seasonal helpers. Seasonal folks roll off the books on their end date — and only active crew count toward billing.</p>
       <div id="roster"></div>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">Crew sign-ups</p>
+      <h2>Give your crew this code</h2>
+      <p class="lede">Workers sign up at <b>/login</b> with this code to join your shop — then they see their own week, rate and punches in the crew app.</p>
+      <div style="font-family:var(--disp); font-weight:700; font-size:34px; letter-spacing:.14em; color:var(--clay); margin-top:10px" id="joinCode">—</div>
     </div>
 
     <div class="card hidden" id="addCard">
@@ -463,9 +477,27 @@
 </nav>
 
 <script>
-const COMPANY = "shop-1";
-const WEEK = { periodStart: "2026-01-04", periodEnd: "2026-01-10", checkDate: "2026-01-14" };
+// The signed-in owner's company — real accounts, not a fixed demo shop. The
+// sample shop's data lives in the first week of Jan 2026, so the demo company
+// keeps that week; a real shop runs the current one.
+const DEMO_WEEK = { periodStart: "2026-01-04", periodEnd: "2026-01-10", checkDate: "2026-01-14" };
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function currentWeek() {
+  const now = new Date();
+  const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  const check = new Date(end); check.setDate(end.getDate() + 4);
+  return { periodStart: iso(start), periodEnd: iso(end), checkDate: iso(check) };
+}
+let COMPANY = "", WEEK = DEMO_WEEK, IS_DEMO = true;
 let crew = [], jobs = [], jobById = {}, crewNames = {}, lastRunId = null;
+async function auth() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (!res.ok) { window.location.href = "/login"; return null; }
+    return await res.json();
+  } catch { window.location.href = "/login"; return null; }
+}
 
 const $ = (id) => document.getElementById(id);
 const money = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -500,10 +532,15 @@ async function loadAll() {
   jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
   crewNames = Object.fromEntries(crew.map((e) => [e.id, e.name]));
   if (!crew.length) {
-    ["todayBody","rosterCard","addCard","nudgeCard"].forEach(id=>$(id).classList.add("hidden"));
-    ["todaySetup","setupCard"].forEach(id=>$(id).classList.remove("hidden"));
+    ["todayBody","rosterCard","nudgeCard"].forEach(id=>$(id).classList.add("hidden"));
+    if (IS_DEMO) { ["todaySetup","setupCard"].forEach(id=>$(id).classList.remove("hidden")); return; }
+    // A real shop with no crew yet starts at the beginning: add your first worker
+    // (or hand out the join code below) — no sample data to lean on.
+    $("freshStart").classList.remove("hidden");
+    $("addCard").classList.remove("hidden");
     return;
   }
+  $("freshStart").classList.add("hidden");
   ["todaySetup","setupCard"].forEach(id=>$(id).classList.add("hidden"));
   ["todayBody","rosterCard","addCard","nudgeCard"].forEach(id=>$(id).classList.remove("hidden"));
 
@@ -563,6 +600,7 @@ async function loadToday() {
   } catch (e) { /* dashboard is best-effort */ }
 }
 $("toPayBtn").addEventListener("click", () => showView("pay"));
+$("freshToCrewBtn").addEventListener("click", () => showView("crew"));
 
 function renderRoster() {
   $("roster").innerHTML = crew.map((e) => {
@@ -660,7 +698,7 @@ $("offSiteBtn").addEventListener("click", () => {
 });
 async function loadPunches() {
   try {
-    const { events } = await api("GET", `/api/companies/${COMPANY}/clock?date=2026-01-14`);
+    const { events } = await api("GET", `/api/companies/${COMPANY}/clock?date=${WEEK.checkDate}`);
     // also show today's real punches
     const today = new Date().toISOString().slice(0, 10);
     const { events: realToday } = await api("GET", `/api/companies/${COMPANY}/clock?date=${today}`);
@@ -768,7 +806,24 @@ async function seed(ev) {
 }
 $("seedBtn").addEventListener("click", seed);
 $("seedBtn2").addEventListener("click", seed);
-loadAll().catch(() => {});
+$("logoutLink").addEventListener("click", async (ev) => {
+  ev.preventDefault();
+  try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+  window.location.href = "/login";
+});
+
+// ---- boot: sign in, scope to the owner's shop, then load ----
+(async () => {
+  const me = await auth(); if (!me) return;
+  if (me.user.role === "worker") { window.location.href = "/me"; return; }
+  COMPANY = me.user.companyId;
+  IS_DEMO = !!me.demo;
+  WEEK = IS_DEMO ? DEMO_WEEK : currentWeek();
+  $("shopTag").textContent = `Owner · ${me.company ? me.company.name : "your shop"}`;
+  $("joinCode").textContent = me.joinCode;
+  if (!IS_DEMO) ["seedBtn", "seedBtn2"].forEach((id) => $(id)?.closest(".card").classList.add("hidden"));
+  loadAll().catch(() => {});
+})();
 </script>
 </body>
 </html>

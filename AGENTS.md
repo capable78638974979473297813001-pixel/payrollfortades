@@ -19,6 +19,7 @@ Serves on port 3000. The container uses `node --watch` for live reload on file c
 - **No external secrets needed** — SMS nudges reference a Twilio carrier but report "not delivered" without one; this is intentional, not a missing config.
 - **TypeScript runs natively** — `node examples/trades-server.ts` works because Node 22.18+ strips types automatically. No compilation step.
 - The server is transport-only (`examples/trades-server.ts`); all business logic lives in `src/` (tax engine), `payroll/` (payroll layer), and `trades/` (trades-specific features).
+- **Real accounts** — `trades/auth.ts` owns signup/login/sessions (scrypt-hashed passwords, server-side session tokens, per-shop join codes) persisted to `trades/.data/auth-db.json` (override: `CREWTALLY_AUTH_DB_DIR`). Session cookie: `crewtally_session`. All `/api/companies/:id/*` routes require a signed-in user of that shop; shop-data writes are owner-only; the crew app's `/me` route only serves a worker their own record. `POST /api/demo/seed` signs you in as the demo owner (`demo@crewtally.local`, password `demo`). Pages: `/login` (= `/signup`) sign-in page, `/me` for workers, `/owner` for owners. Non-demo companies use the current week; the demo company (`shop-1`) keeps the Jan 4–10, 2026 sample week.
 
 ## Tests
 ```bash

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Crewtally · Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* Crewtally sign-in — the real front door. Same field-notebook language as
+     the apps: warm cream paper + blueprint grid, Fraunces display over Hanken
+     Grotesk, printed-sticker buttons with a hard offset shadow. */
+  :root {
+    --paper:#F4EEE1; --paper2:#EFE7D6; --card:#FFFDF7;
+    --ink:#211D17; --ink2:#5b5346; --ink3:#8a8172;
+    --line:#E2D9C4; --line2:#D6CBB0;
+    --clay:#BE4A28; --clay-d:#9c3a1e;
+    --pine:#2F5B48; --pine-s:#E3EEE4;
+    --brick:#A22E1D; --brick-s:#F6E2DC;
+    --disp:"Fraunces",Georgia,"Times New Roman",serif;
+    --body:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; color:var(--ink); font-family:var(--body); font-size:17px; line-height:1.5;
+    background-color:var(--paper);
+    background-image:linear-gradient(rgba(51,85,110,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(51,85,110,.05) 1px,transparent 1px);
+    background-size:26px 26px; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2 { font-family:var(--disp); font-weight:600; margin:0; letter-spacing:-.01em; }
+  header.top { position:sticky; top:0; z-index:20; background:rgba(244,238,225,.94); backdrop-filter:blur(6px); border-bottom:2px solid var(--ink); }
+  .top-in { max-width:560px; margin:0 auto; padding:11px 16px; display:flex; align-items:center; gap:10px; }
+  .brand { display:flex; align-items:center; gap:9px; text-decoration:none; color:var(--ink); }
+  .mark { width:32px; height:32px; flex:none; }
+  .word { font-family:var(--disp); font-weight:700; font-size:21px; letter-spacing:-.02em; }
+  .word b { color:var(--clay); }
+
+  main { max-width:430px; margin:0 auto; padding:26px 16px calc(44px + env(safe-area-inset-bottom)); }
+
+  .tabs { display:flex; gap:8px; margin-bottom:18px; }
+  .tabs button {
+    flex:1; font:inherit; font-weight:700; font-size:15px; padding:11px; cursor:pointer;
+    color:var(--ink3); background:transparent; border:2px solid transparent; border-radius:12px;
+  }
+  .tabs button.on { color:var(--ink); background:var(--card); border-color:var(--ink); box-shadow:3px 3px 0 rgba(33,29,23,.09); }
+
+  .card { background:var(--card); border:2px solid var(--ink); border-radius:15px; padding:24px; margin-bottom:16px; box-shadow:4px 5px 0 rgba(33,29,23,.09); }
+  .card h2 { font-size:25px; margin-bottom:4px; }
+  .card .sub { color:var(--ink3); font-size:14.5px; margin:0 0 6px; }
+
+  label { display:block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink3); margin:15px 0 5px; }
+  input { font:inherit; width:100%; padding:12px; color:var(--ink); background:var(--paper); border:2px solid var(--line2); border-radius:10px; }
+  input:focus { outline:none; border-color:var(--clay); background:#fff; box-shadow:0 0 0 3px rgba(190,74,40,.13); }
+
+  .btn { font-family:var(--body); font-weight:700; cursor:pointer; color:#fff; background:var(--clay); border:2px solid var(--ink); border-radius:12px; box-shadow:3px 3px 0 var(--ink); transition:transform .07s, box-shadow .07s; }
+  .btn:active { transform:translate(3px,3px); box-shadow:0 0 0 var(--ink); }
+  .btn:disabled { opacity:.55; }
+  .btn.block { width:100%; font-size:16px; padding:14px; margin-top:22px; }
+
+  .roles { display:flex; gap:10px; margin-top:6px; }
+  .roles button {
+    flex:1; font:inherit; font-weight:700; font-size:13.5px; padding:12px 8px; cursor:pointer; text-align:center; line-height:1.35;
+    color:var(--ink3); background:var(--paper); border:2px solid var(--line2); border-radius:11px;
+  }
+  .roles button.on { color:var(--ink); background:var(--pine-s); border-color:var(--pine); }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .err { color:var(--brick); background:var(--brick-s); border:1.5px solid var(--brick); border-radius:9px; padding:11px 13px; margin:14px 0 0; font-weight:600; font-size:14.5px; }
+  .demo { text-align:center; color:var(--ink3); font-size:14px; margin:22px 0 0; }
+  .demo a { color:var(--clay); font-weight:700; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="/">
+      <svg class="mark" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="40" height="40" rx="11" fill="#211D17"/>
+        <path d="M11 24.5l6.5 6.5L33 14" stroke="#BE4A28" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="33" cy="14" r="2.4" fill="#F4EEE1"/>
+      </svg>
+      <span class="word">Crew<b>tally</b></span>
+    </a>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button id="tabLogin" class="on">Log in</button>
+    <button id="tabSignup">Sign up</button>
+  </div>
+
+  <div class="card" id="loginCard">
+    <h2>Welcome back</h2>
+    <p class="sub">Your shop, your crew, your week.</p>
+    <label for="lEmail">Email</label>
+    <input id="lEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+    <label for="lPass">Password</label>
+    <input id="lPass" type="password" autocomplete="current-password" />
+    <button class="btn block" id="loginBtn">Log in</button>
+    <div id="lErr"></div>
+  </div>
+
+  <div class="card hidden" id="signupCard">
+    <h2>Create your account</h2>
+    <p class="sub">Owners get a shop; crew get their week. $5 per employee per month, no lock-in.</p>
+    <label for="sName">Full name</label>
+    <input id="sName" autocomplete="name" placeholder="Dana Rivera" />
+    <label for="sEmail">Email</label>
+    <input id="sEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+    <label for="sPass">Password</label>
+    <input id="sPass" type="password" autocomplete="new-password" placeholder="8+ characters" />
+    <label>I am…</label>
+    <div class="roles">
+      <button id="roleOwner" class="on">The owner — I run the shop</button>
+      <button id="roleWorker">Crew — I work for a shop</button>
+    </div>
+    <div id="ownerFields">
+      <label for="sShop">Shop name</label>
+      <input id="sShop" placeholder="Rooter Bros LLC" />
+      <div class="grid2">
+        <div>
+          <label for="sState">Home state</label>
+          <input id="sState" maxlength="2" placeholder="TX" />
+        </div>
+        <div>
+          <label for="sEin">EIN (optional)</label>
+          <input id="sEin" placeholder="74-1234567" />
+        </div>
+      </div>
+    </div>
+    <div id="workerFields" class="hidden">
+      <label for="sCode">Shop join code</label>
+      <input id="sCode" placeholder="From your foreman's console" />
+      <label for="sRate">Your rate $/hr</label>
+      <input id="sRate" type="number" min="1" step="0.5" value="25" />
+    </div>
+    <button class="btn block" id="signupBtn">Create account</button>
+    <div id="sErr"></div>
+  </div>
+
+  <p class="demo">Just looking around? <a href="#" id="demoLink">See the live demo →</a></p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m]));
+const showErr = (where, msg) => { $(where).innerHTML = `<div class="err">${esc(msg)}</div>`; };
+
+// ---- tabs ----
+function showMode(mode) {
+  const login = mode === "login";
+  $("tabLogin").classList.toggle("on", login);
+  $("tabSignup").classList.toggle("on", !login);
+  $("loginCard").classList.toggle("hidden", !login);
+  $("signupCard").classList.toggle("hidden", login);
+  window.history.replaceState(null, "", login ? "/login" : "/signup");
+}
+$("tabLogin").addEventListener("click", () => showMode("login"));
+$("tabSignup").addEventListener("click", () => showMode("signup"));
+if (window.location.pathname === "/signup") showMode("signup");
+
+// ---- role toggle ----
+function setRole(role) {
+  $("roleOwner").classList.toggle("on", role === "owner");
+  $("roleWorker").classList.toggle("on", role === "worker");
+  $("ownerFields").classList.toggle("hidden", role !== "owner");
+  $("workerFields").classList.toggle("hidden", role !== "worker");
+}
+$("roleOwner").addEventListener("click", () => setRole("owner"));
+$("roleWorker").addEventListener("click", () => setRole("worker"));
+
+async function post(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong — try again.");
+  return data;
+}
+const enter = (el, fn) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") fn(); });
+const home = (user) => { window.location.href = user.role === "owner" ? "/owner" : "/me"; };
+
+// ---- log in ----
+async function doLogin() {
+  $("lErr").innerHTML = ""; const btn = $("loginBtn");
+  btn.disabled = true; btn.textContent = "Logging in…";
+  try { const { user } = await post("/api/auth/login", { email: $("lEmail").value.trim(), password: $("lPass").value }); home(user); }
+  catch (e) { showErr("lErr", e.message); btn.disabled = false; btn.textContent = "Log in"; }
+}
+$("loginBtn").addEventListener("click", doLogin);
+enter($("lEmail"), doLogin);
+enter($("lPass"), doLogin);
+
+// ---- sign up ----
+async function doSignup() {
+  $("sErr").innerHTML = ""; const btn = $("signupBtn");
+  btn.disabled = true; btn.textContent = "Creating…";
+  const role = $("roleOwner").classList.contains("on") ? "owner" : "worker";
+  const body = { email: $("sEmail").value.trim(), password: $("sPass").value, name: $("sName").value.trim(), role };
+  if (role === "owner") Object.assign(body, { shopName: $("sShop").value.trim(), homeState: $("sState").value.trim(), ein: $("sEin").value.trim() });
+  else Object.assign(body, { joinCode: $("sCode").value.trim(), hourlyRate: parseFloat($("sRate").value) });
+  try { const { user } = await post("/api/auth/signup", body); home(user); }
+  catch (e) { showErr("sErr", e.message); btn.disabled = false; btn.textContent = "Create account"; }
+}
+$("signupBtn").addEventListener("click", doSignup);
+enter($("sPass"), doSignup);
+
+// ---- demo door ----
+$("demoLink").addEventListener("click", async (e) => {
+  e.preventDefault();
+  $("demoLink").textContent = "Loading the sample shop…";
+  try { await fetch("/api/demo/seed", { method: "POST" }); window.location.href = "/owner"; } catch {}
+});
+</script>
+</body>
+</html>

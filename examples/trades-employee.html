@@ -126,20 +126,14 @@
       <span class="word">Crew<b>tally</b></span>
     </a>
     <div class="who-pill">
-      <select id="meSel" aria-label="Who are you"></select>
+      <span class="chip reg hidden" id="meName"></span>
+      <button class="btn ghost" id="logoutBtn" style="font-size:13px; padding:7px 12px; box-shadow:2px 2px 0 var(--ink)">Log out</button>
     </div>
   </div>
 </header>
 
 <main>
   <div id="topErr"></div>
-
-  <!-- shown when no crew exists yet -->
-  <div class="card setup hidden" id="setupCard">
-    <h2>No crew loaded yet</h2>
-    <p class="empty">Ask your foreman to set up the shop — or, if you're just looking around, load the sample.</p>
-    <button class="btn block" id="seedBtn" style="margin-top:14px">Load the sample shop</button>
-  </div>
 
   <div id="appBody" class="hidden">
     <div class="hello">
@@ -187,11 +181,26 @@
 </main>
 
 <script>
-const COMPANY = "shop-1";
-// The sample data lives in the first week of Jan 2026, so the crew app shows a
-// full week out of the box. A live shop would point this at the current week.
-const WEEK = { start: "2026-01-04", end: "2026-01-10", label: "Jan 4–10" };
-let crew = [], jobs = [], jobById = {}, meId = null;
+// Who you are comes from your session — the crew app only ever serves the
+// signed-in worker their own record. The sample shop's data lives in the first
+// week of Jan 2026, so the demo company keeps that week; a real shop views the
+// current one.
+const DEMO_WEEK = { start: "2026-01-04", end: "2026-01-10", label: "Jan 4–10" };
+let COMPANY = "", WEEK = DEMO_WEEK, jobs = [], jobById = {}, meId = null;
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function currentWeek() {
+  const now = new Date();
+  const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  return { start: iso(start), end: iso(end), label: `${MON[start.getMonth()]} ${start.getDate()}–${end.getDate()}` };
+}
+async function auth() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (!res.ok) { window.location.href = "/login"; return null; }
+    return await res.json();
+  } catch { window.location.href = "/login"; return null; }
+}
 
 const $ = (id) => document.getElementById(id);
 const money = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -208,28 +217,23 @@ async function api(method, path, body) {
 const showErr = (where, msg) => { $(where).innerHTML = `<div class="err">${esc(msg)}</div>`; };
 
 async function boot() {
-  let employees = [], jb = [];
-  try {
-    ({ employees } = await api("GET", `/api/companies/${COMPANY}/employees`));
-    ({ jobs: jb } = await api("GET", `/api/companies/${COMPANY}/jobs`));
-  } catch {}
-  crew = employees; jobs = jb; jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
-  if (!crew.length) { $("setupCard").classList.remove("hidden"); $("appBody").classList.add("hidden"); return; }
-  $("setupCard").classList.add("hidden"); $("appBody").classList.remove("hidden");
-
-  $("meSel").innerHTML = crew.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("");
-  $("cJob").innerHTML = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)}</option>`).join("");
-
-  const saved = localStorage.getItem("crewtally.me");
-  meId = crew.some((e) => e.id === saved) ? saved : crew[0].id;
-  $("meSel").value = meId;
+  const me = await auth(); if (!me) return;
+  if (me.user.role === "owner") { window.location.href = "/owner"; return; }
+  COMPANY = me.user.companyId;
+  WEEK = me.demo ? DEMO_WEEK : currentWeek();
+  meId = me.user.employeeId;
+  $("meName").textContent = me.user.name;
+  $("meName").classList.remove("hidden");
+  let jb = [];
+  try { ({ jobs: jb } = await api("GET", `/api/companies/${COMPANY}/jobs`)); } catch {}
+  jobs = jb; jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
+  $("cJob").innerHTML = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)}</option>`).join("") || `<option>— no jobs yet —</option>`;
+  $("appBody").classList.remove("hidden");
   await selectMe(meId);
 }
-$("meSel").addEventListener("change", (e) => selectMe(e.target.value));
 
 async function selectMe(id) {
   meId = id;
-  try { localStorage.setItem("crewtally.me", id); } catch {}
   $("clockMsg").innerHTML = ""; resetRadar();
   await Promise.all([loadWeek(), loadPunches()]);
 }
@@ -297,7 +301,7 @@ $("offSiteBtn").addEventListener("click", () => {
 async function loadPunches() {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const days = [...new Set([today, "2026-01-14", WEEK.end])];
+    const days = [...new Set([today, WEEK.end])];
     const lists = await Promise.all(days.map((d) => api("GET", `/api/companies/${COMPANY}/clock?date=${d}`).then((r) => r.events).catch(() => [])));
     const mine = lists.flat().filter((e) => e.employeeId === meId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
     $("punches").innerHTML = mine.length ? mine.map((e) => `<div class="punch">
@@ -309,10 +313,9 @@ async function loadPunches() {
   } catch {}
 }
 
-$("seedBtn").addEventListener("click", async (ev) => {
-  ev.target.disabled = true; ev.target.innerHTML = `<span class="spin"></span> Loading…`;
-  try { await api("POST", "/api/demo/seed"); await boot(); }
-  catch (e) { showErr("topErr", e.message); ev.target.disabled = false; ev.target.textContent = "Load the sample shop"; }
+$("logoutBtn").addEventListener("click", async () => {
+  try { await api("POST", "/api/auth/logout"); } catch {}
+  window.location.href = "/login";
 });
 
 boot();

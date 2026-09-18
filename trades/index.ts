@@ -152,3 +152,18 @@ export {
   weeklyJobCosts,
 } from './service.ts';
 export type { TradesRunRequest } from './service.ts';
+
+export {
+  AuthError,
+  companyForJoinCode,
+  createSession,
+  ensureDemoOwner,
+  joinCodeForCompany,
+  logIn,
+  logOut,
+  sessionUserFor,
+  signUpOwner,
+  signUpWorker,
+  userForEmail,
+} from './auth.ts';
+export type { AuthUser } from './auth.ts';
