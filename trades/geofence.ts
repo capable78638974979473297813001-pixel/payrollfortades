@@ -87,4 +87,6 @@ export interface ClockEvent {
   onSite: boolean;
   distanceMeters: number | null;
   note: string;
+  /** What the worker typed for where the job is — an address or site the crew app asks for at clock-in, shown on the punch for the foreman. */
+  where?: string;
 }

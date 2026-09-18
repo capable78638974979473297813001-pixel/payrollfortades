@@ -146,6 +146,7 @@
       <p class="eyebrow">On the job</p>
       <h2>Clock in</h2>
       <div style="margin-top:12px"><label>Which job?</label><select id="cJob"></select></div>
+      <div style="margin-top:10px"><label>Where is the job?</label><input id="cWhere" placeholder="Address or site — e.g. 1420 Elm St, Austin" /></div>
       <div class="radar" id="radar"><div class="ping"></div><div class="site"></div></div>
       <div id="clockStatus" style="text-align:center; min-height:26px; margin-bottom:10px"></div>
       <button class="btn pine huge" id="clockInBtn">Clock In</button>
@@ -279,7 +280,7 @@ function paintRadar(check) {
 async function punch(type, coords) {
   $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:12px"><span class="spin"></span> Checking your location…</div>`;
   try {
-    const { verification } = await api("POST", "/api/clock", { companyId: COMPANY, employeeId: meId, jobId: $("cJob").value, type, lat: coords?.lat, lng: coords?.lng });
+    const { verification } = await api("POST", "/api/clock", { companyId: COMPANY, employeeId: meId, jobId: $("cJob").value, where: $("cWhere").value.trim() || undefined, type, lat: coords?.lat, lng: coords?.lng });
     paintRadar(verification);
     $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:10px">${type === "in" ? "Clocked in" : "Clocked out"} · ${esc(verification.note)}</div>`;
     await loadPunches();
@@ -306,7 +307,7 @@ async function loadPunches() {
     const mine = lists.flat().filter((e) => e.employeeId === meId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
     $("punches").innerHTML = mine.length ? mine.map((e) => `<div class="punch">
       <span class="t">${e.type === "in" ? "In" : "Out"}</span>
-      <span class="j">${esc(jobById[e.jobId]?.name || e.jobId)}</span>
+      <span class="j">${esc(jobById[e.jobId]?.name || e.jobId)}${e.where ? " · " + esc(e.where) : ""}</span>
       <span class="empty tnum">${esc(e.at.slice(11, 16))}</span>
       <span class="chip ${e.onSite ? "on" : "off"}" style="font-size:11.5px; padding:2px 9px">${e.onSite ? "on site" : (e.distanceMeters != null ? e.distanceMeters + "m off" : "unverified")}</span>
     </div>`).join("") : `<p class="empty">No punches recorded yet. Hit Clock In up top.</p>`;

@@ -340,8 +340,17 @@ const server = createServer(async (req, res) => {
       const user = sessionUser(req);
       if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
       if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can change shop data.' });
-      const job = await readJson<Job>(req);
-      if (job.companyId !== user.companyId) return sendJson(res, 403, { error: 'That job belongs to a different shop.' });
+      const b = await readJson<{ name?: string; workState?: string; workLocality?: string }>(req);
+      const name = (b.name ?? '').trim();
+      const workState = (b.workState ?? '').trim().toUpperCase();
+      if (!name || workState.length !== 2) return sendJson(res, 400, { error: 'A job name and a two-letter work state are required.' });
+      const job: Job = {
+        id: `job_${randomUUID().slice(0, 8)}`,
+        companyId: user.companyId,
+        name,
+        workState,
+        workLocality: (b.workLocality ?? '').trim() || undefined,
+      };
       saveJob(job);
       return sendJson(res, 201, { ok: true, id: job.id });
     }
@@ -479,7 +488,7 @@ const server = createServer(async (req, res) => {
     // Geofenced clock-in / out: verify the device's coordinates against the
     // job's fence, record the punch (flagged if off-site), and return the check.
     if (method === 'POST' && path === '/api/clock') {
-      const b = await readJson<{ companyId?: string; employeeId?: string; jobId?: string; type?: 'in' | 'out'; lat?: number; lng?: number }>(req);
+      const b = await readJson<{ companyId?: string; employeeId?: string; jobId?: string; type?: 'in' | 'out'; lat?: number; lng?: number; where?: string }>(req);
       const user = sessionUser(req);
       if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
       if (user.companyId !== b.companyId) return sendJson(res, 403, { error: 'That shop belongs to a different account.' });
@@ -499,6 +508,7 @@ const server = createServer(async (req, res) => {
         onSite: check.onSite,
         distanceMeters: check.distanceMeters,
         note: check.note,
+        where: (b.where ?? '').trim().slice(0, 120) || undefined,
       };
       addClockEvent(event);
       return sendJson(res, 201, { event, verification: check });

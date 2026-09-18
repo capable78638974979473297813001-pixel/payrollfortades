@@ -366,6 +366,18 @@
   <!-- ======================= CLOCK ======================= -->
   <section class="view" id="view-clock">
     <div class="card">
+      <p class="eyebrow">Job sites</p>
+      <h2>Jobs</h2>
+      <p class="lede">Add the jobs your crew is working — workers pick one when they clock in.</p>
+      <div class="row">
+        <div class="f"><label>Job name</label><input id="jName" placeholder="Elm St kitchen remodel" /></div>
+        <div class="f sm"><label>Work state</label><input id="jState" maxlength="2" placeholder="TX" /></div>
+        <div><button class="btn sm" id="addJobBtn">Add</button></div>
+      </div>
+      <div id="jobsList" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
       <p class="eyebrow">On the job</p>
       <h2>Geofenced clock-in</h2>
       <p class="lede">Punch in from the phone. Crewtally checks you're actually at the site — a punch from the wrong place still counts, but it's flagged for the foreman.</p>
@@ -531,6 +543,7 @@ async function loadAll() {
   crew = employees; jobs = jb;
   jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
   crewNames = Object.fromEntries(crew.map((e) => [e.id, e.name]));
+  renderJobs();
   if (!crew.length) {
     ["todayBody","rosterCard","nudgeCard"].forEach(id=>$(id).classList.add("hidden"));
     if (IS_DEMO) { ["todaySetup","setupCard"].forEach(id=>$(id).classList.remove("hidden")); return; }
@@ -579,7 +592,7 @@ async function loadToday() {
     $("stOnClockSub").textContent = onNow.length ? `${onNow.filter((e) => e.onSite).length} on site` : "nobody punched in yet";
     $("onClockList").innerHTML = onNow.length ? onNow.map((e) => `<div class="worker">
         <div class="avatar" style="background:${avatarColor(e.employeeId)}">${esc((who(e.employeeId).split(/\s+/).map((w)=>w[0]).slice(0,2).join("")||"?").toUpperCase())}</div>
-        <div><div class="nm">${esc(who(e.employeeId))}</div><div class="meta">${esc(jobById[e.jobId]?.name || e.jobId)} · in at ${esc(e.at.slice(11,16))}</div></div>
+        <div><div class="nm">${esc(who(e.employeeId))}</div><div class="meta">${esc(jobById[e.jobId]?.name || e.jobId)}${e.where ? " @ " + esc(e.where) : ""} · in at ${esc(e.at.slice(11,16))}</div></div>
         <div class="spacer"></div><span class="chip ${e.onSite ? "on" : "off"}">${e.onSite ? "✓ on site" : "⚠ off site"}</span>
       </div>`).join("") : `<p class="empty">No one is punched in right now. Punches show up here the moment the crew clocks in.</p>`;
 
@@ -601,6 +614,21 @@ async function loadToday() {
 }
 $("toPayBtn").addEventListener("click", () => showView("pay"));
 $("freshToCrewBtn").addEventListener("click", () => showView("crew"));
+
+// ---- jobs ----
+function renderJobs() {
+  const list = $("jobsList"); if (!list) return;
+  list.innerHTML = jobs.length
+    ? `<table><tbody>${jobs.map((j) => `<tr><td><b>${esc(j.name)}</b></td><td class="empty">${esc(j.workState)}${j.workLocality ? " · " + esc(j.workLocality) : ""}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="empty">No jobs yet — add your first job above so the crew can clock in.</p>`;
+}
+$("addJobBtn").addEventListener("click", async () => {
+  const body = { companyId: COMPANY, name: $("jName").value.trim(), workState: $("jState").value.trim() };
+  if (!body.name || !/^[A-Za-z]{2}$/.test(body.workState)) return showErr("topErr", "A job name and a two-letter state are required.");
+  $("topErr").innerHTML = "";
+  try { await api("POST", "/api/jobs", body); $("jName").value = ""; $("jState").value = ""; await loadAll(); }
+  catch (e) { showErr("topErr", e.message); }
+});
 
 function renderRoster() {
   $("roster").innerHTML = crew.map((e) => {
@@ -704,7 +732,7 @@ async function loadPunches() {
     const { events: realToday } = await api("GET", `/api/companies/${COMPANY}/clock?date=${today}`);
     const all = [...realToday, ...events];
     $("punches").innerHTML = all.length ? `<table><tbody>${all.map((e) => `<tr>
-      <td><b>${esc(who(e.employeeId))}</b></td><td class="empty">${esc(jobById[e.jobId]?.name || e.jobId)}</td>
+      <td><b>${esc(who(e.employeeId))}</b></td><td class="empty">${esc(jobById[e.jobId]?.name || e.jobId)}${e.where ? " · " + esc(e.where) : ""}</td>
       <td>${e.type === "in" ? "in" : "out"}</td>
       <td class="empty">${esc(e.at.slice(11, 16))}</td>
       <td class="r"><span class="chip ${e.onSite ? "on" : "off"}">${e.onSite ? "on site" : (e.distanceMeters != null ? e.distanceMeters + " m off" : "unverified")}</span></td>
