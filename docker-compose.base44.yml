@@ -1,0 +1,13 @@
+services:
+  web:
+    image: node:22
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    command: node --watch examples/trades-server.ts
+    restart: unless-stopped
