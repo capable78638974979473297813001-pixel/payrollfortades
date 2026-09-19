@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node examples/trades-server.ts",
     "crewtally": "node examples/trades-server.ts",
-    "test": "node --test tests/trades.test.ts tests/trades-features.test.ts tests/trades-accounts.test.ts"
+    "test": "node --test tests/trades.test.ts tests/trades-features.test.ts"
   },
   "license": "MIT"
 }

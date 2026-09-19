@@ -74,6 +74,14 @@ export type { ApprenticeRatioDayFinding, ApprenticeshipProgram } from './apprent
 export { distanceMeters, verifyClockIn } from './geofence.ts';
 export type { ClockEvent, ClockVerification, GeoPoint } from './geofence.ts';
 
+export {
+  TRACKED_CLASSIFICATION_CODE,
+  findOpenPunch,
+  findOrCreateJobByName,
+  punchHours,
+  recordTrackedHours,
+} from './clockTracking.ts';
+
 export { computeMissingHoursNudges, consoleNudgeSender, renderNudgeText, sendNudges } from './nudge.ts';
 export type { NudgeCandidate, NudgeSendResult, NudgeSender, NudgeWorker } from './nudge.ts';
 
@@ -154,18 +162,16 @@ export {
 export type { TradesRunRequest } from './service.ts';
 
 export {
-  EmailTakenError,
-  accountForToken,
-  createAccount,
+  AuthError,
+  companyForJoinCode,
   createSession,
-  deleteSession,
-  getAccount,
-  getAccountByEmail,
-  getAccountForEmployee,
-  getSession,
-  normalizeEmail,
-  publicAccount,
-  setPassword,
-  verifyCredentials,
-} from './accounts.ts';
-export type { Account, AccountRole, CreateAccountInput, PublicAccount, Session } from './accounts.ts';
+  ensureDemoOwner,
+  joinCodeForCompany,
+  logIn,
+  logOut,
+  sessionUserFor,
+  signUpOwner,
+  signUpWorker,
+  userForEmail,
+} from './auth.ts';
+export type { AuthUser } from './auth.ts';

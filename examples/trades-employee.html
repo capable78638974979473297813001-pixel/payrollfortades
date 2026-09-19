@@ -41,11 +41,8 @@
   .mark { width:32px; height:32px; flex:none; }
   .word { font-family:var(--disp); font-weight:700; font-size:21px; letter-spacing:-.02em; }
   .word b { color:var(--clay); }
-  .who-pill { margin-left:auto; display:flex; align-items:center; gap:9px; }
+  .who-pill { margin-left:auto; display:flex; align-items:center; gap:7px; }
   .who-pill select { font:inherit; font-weight:700; font-size:14px; padding:7px 10px; border:2px solid var(--ink); border-radius:999px; background:var(--card); color:var(--ink); box-shadow:2px 2px 0 var(--ink); max-width:150px; }
-  .me-name { font-weight:700; font-size:14px; background:var(--card); border:2px solid var(--ink); border-radius:999px; padding:6px 13px; box-shadow:2px 2px 0 var(--ink); }
-  .logout { font-family:var(--body); cursor:pointer; background:none; border:none; color:var(--ink3); font-weight:700; font-size:13px; padding:6px 2px; }
-  .logout:hover { color:var(--brick); }
 
   main { max-width:560px; margin:0 auto; padding:18px 16px calc(28px + env(safe-area-inset-bottom)); }
 
@@ -129,22 +126,14 @@
       <span class="word">Crew<b>tally</b></span>
     </a>
     <div class="who-pill">
-      <span id="meName" class="me-name hidden"></span>
-      <select id="meSel" class="hidden" aria-label="Who are you"></select>
-      <button id="logoutBtn" class="logout" title="Log out">Log out</button>
+      <span class="chip reg hidden" id="meName"></span>
+      <button class="btn ghost" id="logoutBtn" style="font-size:13px; padding:7px 12px; box-shadow:2px 2px 0 var(--ink)">Log out</button>
     </div>
   </div>
 </header>
 
 <main>
   <div id="topErr"></div>
-
-  <!-- shown when no crew exists yet -->
-  <div class="card setup hidden" id="setupCard">
-    <h2>No crew loaded yet</h2>
-    <p class="empty">Ask your foreman to set up the shop — or, if you're just looking around, load the sample.</p>
-    <button class="btn block" id="seedBtn" style="margin-top:14px">Load the sample shop</button>
-  </div>
 
   <div id="appBody" class="hidden">
     <div class="hello">
@@ -156,11 +145,11 @@
     <div class="card">
       <p class="eyebrow">On the job</p>
       <h2>Clock in</h2>
-      <div style="margin-top:12px"><label>Which job?</label><select id="cJob"></select></div>
+      <div style="margin-top:12px"><label>Where's the job?</label><input id="cWhere" list="jobList" placeholder="Job name or address — e.g. 1420 Elm St kitchen" /><datalist id="jobList"></datalist></div>
       <div class="radar" id="radar"><div class="ping"></div><div class="site"></div></div>
       <div id="clockStatus" style="text-align:center; min-height:26px; margin-bottom:10px"></div>
       <button class="btn pine huge" id="clockInBtn">Clock In</button>
-      <button class="btn ghost block" id="clockOutBtn" style="margin-top:10px">Clock Out</button>
+      <button class="btn huge hidden" id="clockOutBtn" style="margin-top:10px; background:var(--brick); box-shadow:3px 3px 0 var(--ink)">Clock Out</button>
       <div style="text-align:center; margin-top:10px">
         <button class="btn ghost" id="offSiteBtn" style="font-size:13px; padding:7px 12px; box-shadow:2px 2px 0 var(--ink)">Try an off‑site punch (demo)</button>
       </div>
@@ -177,7 +166,7 @@
         <div class="lab">At <b id="myRate">—</b>/hr · rough gross<div class="empty" style="font-size:12px">before prevailing‑wage make‑up &amp; taxes</div></div>
         <div class="v tnum" id="weekEst">—</div>
       </div>
-      <div class="note info" style="margin-top:14px" id="payNote">Your foreman runs payroll Friday. Prevailing‑wage make‑up gets added on top of this, then taxes come out — your take‑home lands after the run.</div>
+      <div class="note info" style="margin-top:14px" id="payNote">Your foreman runs payroll Friday. Hours over 40 this week are paid at 1.5× automatically; prevailing‑wage make‑up gets added on top, then taxes come out.</div>
     </div>
 
     <!-- punches -->
@@ -187,16 +176,31 @@
       <div id="punches"><p class="empty">No punches recorded yet. Hit Clock In up top.</p></div>
     </div>
 
-    <p class="foot hidden" id="ownerFoot">Viewing as the owner · <a href="/owner">back to the owner console →</a></p>
+    <p class="foot">Are you the owner or foreman? <a href="/owner">Open the owner console →</a></p>
   </div>
 </main>
 
 <script>
-let COMPANY = "shop-1";
-// The sample data lives in the first week of Jan 2026, so the crew app shows a
-// full week out of the box. A live shop would point this at the current week.
-const WEEK = { start: "2026-01-04", end: "2026-01-10", label: "Jan 4–10" };
-let crew = [], jobs = [], jobById = {}, meId = null, myRole = "worker";
+// Who you are comes from your session — the crew app only ever serves the
+// signed-in worker their own record. The sample shop's data lives in the first
+// week of Jan 2026, so the demo company keeps that week; a real shop views the
+// current one.
+const DEMO_WEEK = { start: "2026-01-04", end: "2026-01-10", label: "Jan 4–10" };
+let COMPANY = "", WEEK = DEMO_WEEK, jobs = [], jobById = {}, meId = null;
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function currentWeek() {
+  const now = new Date();
+  const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  return { start: iso(start), end: iso(end), label: `${MON[start.getMonth()]} ${start.getDate()}–${end.getDate()}` };
+}
+async function auth() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (!res.ok) { window.location.href = "/login"; return null; }
+    return await res.json();
+  } catch { window.location.href = "/login"; return null; }
+}
 
 const $ = (id) => document.getElementById(id);
 const money = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -213,49 +217,23 @@ async function api(method, path, body) {
 const showErr = (where, msg) => { $(where).innerHTML = `<div class="err">${esc(msg)}</div>`; };
 
 async function boot() {
-  // Who's signed in? No session → the sign-in page.
-  let me;
-  try { me = await api("GET", "/api/auth/me"); }
-  catch { location.href = "/login"; return; }
-  COMPANY = me.account.companyId;
-  myRole = me.account.role;
-
-  // Jobs are readable by both an owner and a worker (needed to clock in).
-  try { ({ jobs } = await api("GET", `/api/companies/${COMPANY}/jobs`)); } catch { jobs = []; }
-  jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
-
-  if (myRole === "worker") {
-    // Locked to yourself — no roster, no picker.
-    meId = me.account.employeeId;
-    $("meName").textContent = me.account.name;
-    $("meName").classList.remove("hidden");
-    $("meSel").classList.add("hidden");
-  } else {
-    // An owner previewing the crew app can pick any worker.
-    try { ({ employees: crew } = await api("GET", `/api/companies/${COMPANY}/employees`)); } catch { crew = []; }
-    if (!crew.length) { $("setupCard").classList.remove("hidden"); $("appBody").classList.add("hidden"); return; }
-    $("meSel").innerHTML = crew.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("");
-    $("meSel").classList.remove("hidden");
-    $("meName").classList.add("hidden");
-    const saved = localStorage.getItem("crewtally.me");
-    meId = crew.some((e) => e.id === saved) ? saved : crew[0].id;
-    $("meSel").value = meId;
-    $("ownerFoot").classList.remove("hidden"); // only an owner previews the crew app
-  }
-
-  $("setupCard").classList.add("hidden"); $("appBody").classList.remove("hidden");
-  $("cJob").innerHTML = jobs.map((j) => `<option value="${esc(j.id)}">${esc(j.name)}</option>`).join("");
+  const me = await auth(); if (!me) return;
+  if (me.user.role === "owner") { window.location.href = "/owner"; return; }
+  COMPANY = me.user.companyId;
+  WEEK = me.demo ? DEMO_WEEK : currentWeek();
+  meId = me.user.employeeId;
+  $("meName").textContent = me.user.name;
+  $("meName").classList.remove("hidden");
+  let jb = [];
+  try { ({ jobs: jb } = await api("GET", `/api/companies/${COMPANY}/jobs`)); } catch {}
+  jobs = jb; jobById = Object.fromEntries(jobs.map((j) => [j.id, j]));
+  $("jobList").innerHTML = jobs.map((j) => `<option value="${esc(j.name)}"></option>`).join("");
+  $("appBody").classList.remove("hidden");
   await selectMe(meId);
 }
-$("meSel").addEventListener("change", (e) => selectMe(e.target.value));
-$("logoutBtn").addEventListener("click", async () => {
-  try { await api("POST", "/api/auth/logout", {}); } catch {}
-  location.href = "/login";
-});
 
 async function selectMe(id) {
   meId = id;
-  try { localStorage.setItem("crewtally.me", id); } catch {}
   $("clockMsg").innerHTML = ""; resetRadar();
   await Promise.all([loadWeek(), loadPunches()]);
 }
@@ -278,7 +256,7 @@ async function loadWeek() {
     $("weekDays").innerHTML = dates.length ? dates.map((dt) => {
       const rows = byDay[dt];
       const hrs = rows.reduce((s, r) => s + r.hours, 0);
-      const label = rows.map((r) => (jobById[r.jobId]?.name || r.jobId) + (r.classificationCode ? ` · ${r.classificationCode.toLowerCase()}` : "")).join(", ");
+      const label = rows.map((r) => jobById[r.jobId]?.name || r.jobId).join(", ");
       return `<div class="day"><span class="dn">${esc(pretty(dt))}</span><span class="dj">${esc(label)}</span><span class="dh">${hrs}h</span></div>`;
     }).join("") : `<p class="empty">No hours logged this week yet. Clock in to start the day.</p>`;
     $("payNote").classList.toggle("hidden", (d.week.totalHours || 0) === 0);
@@ -299,12 +277,16 @@ function paintRadar(check) {
   $("clockStatus").innerHTML = `<span class="chip ${check.onSite ? "on" : "off"}">${check.onSite ? "✓ On site" : "⚠ Off site"}</span>`;
 }
 async function punch(type, coords) {
+  const where = $("cWhere").value.trim();
+  if (type === "in" && !where) { $("clockMsg").innerHTML = ""; return showErr("clockMsg", "Type where the job is first — the job name or address."); }
   $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:12px"><span class="spin"></span> Checking your location…</div>`;
   try {
-    const { verification } = await api("POST", "/api/clock", { companyId: COMPANY, employeeId: meId, jobId: $("cJob").value, type, lat: coords?.lat, lng: coords?.lng });
+    const body = { companyId: COMPANY, employeeId: meId, type, lat: coords?.lat, lng: coords?.lng };
+    if (type === "in") body.where = where; // the job: yours to name — Crewtally finds it or starts it
+    const { verification, trackedHours } = await api("POST", "/api/clock", body);
     paintRadar(verification);
-    $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:10px">${type === "in" ? "Clocked in" : "Clocked out"} · ${esc(verification.note)}</div>`;
-    await loadPunches();
+    $("clockMsg").innerHTML = `<div class="empty" style="text-align:center; margin-top:10px">${type === "in" ? "Clocked in" : `Clocked out · <b>${trackedHours ?? 0}h</b> tracked this shift`} · ${esc(verification.note)}</div>`;
+    await Promise.all([loadPunches(), loadWeek()]);
   } catch (e) { showErr("clockMsg", e.message); }
 }
 function geoPunch(type) {
@@ -316,29 +298,38 @@ function geoPunch(type) {
 $("clockInBtn").addEventListener("click", () => geoPunch("in"));
 $("clockOutBtn").addEventListener("click", () => geoPunch("out"));
 $("offSiteBtn").addEventListener("click", () => {
-  const loc = jobById[$("cJob").value]?.location;
+  const job = jobs.find((j) => j.name.trim().toLowerCase() === $("cWhere").value.trim().toLowerCase());
+  const loc = job?.location;
   punch("in", loc ? { lat: loc.lat + 0.03, lng: loc.lng } : { lat: 0, lng: 0 });
 });
 
 async function loadPunches() {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const days = [...new Set([today, "2026-01-14", WEEK.end])];
+    const days = [...new Set([today, WEEK.end])];
     const lists = await Promise.all(days.map((d) => api("GET", `/api/companies/${COMPANY}/clock?date=${d}`).then((r) => r.events).catch(() => [])));
     const mine = lists.flat().filter((e) => e.employeeId === meId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
+    // Tracked state: an open 'in' punch means you're on the clock — show Clock Out.
+    const onClock = mine.length > 0 && mine[0].type === "in";
+    $("clockInBtn").classList.toggle("hidden", onClock);
+    $("clockOutBtn").classList.toggle("hidden", !onClock);
+    $("offSiteBtn").classList.toggle("hidden", onClock);
+    if (onClock) {
+      const e = mine[0];
+      $("clockStatus").innerHTML = `<span class="chip on">On the clock since ${esc(e.at.slice(11, 16))} — ${esc(jobById[e.jobId]?.name || e.jobId)}</span>`;
+    }
     $("punches").innerHTML = mine.length ? mine.map((e) => `<div class="punch">
       <span class="t">${e.type === "in" ? "In" : "Out"}</span>
-      <span class="j">${esc(jobById[e.jobId]?.name || e.jobId)}</span>
+      <span class="j">${esc(jobById[e.jobId]?.name || e.jobId)}${e.where ? " · " + esc(e.where) : ""}</span>
       <span class="empty tnum">${esc(e.at.slice(11, 16))}</span>
       <span class="chip ${e.onSite ? "on" : "off"}" style="font-size:11.5px; padding:2px 9px">${e.onSite ? "on site" : (e.distanceMeters != null ? e.distanceMeters + "m off" : "unverified")}</span>
     </div>`).join("") : `<p class="empty">No punches recorded yet. Hit Clock In up top.</p>`;
   } catch {}
 }
 
-$("seedBtn").addEventListener("click", async (ev) => {
-  ev.target.disabled = true; ev.target.innerHTML = `<span class="spin"></span> Loading…`;
-  try { await api("POST", "/api/demo/seed"); await boot(); }
-  catch (e) { showErr("topErr", e.message); ev.target.disabled = false; ev.target.textContent = "Load the sample shop"; }
+$("logoutBtn").addEventListener("click", async () => {
+  try { await api("POST", "/api/auth/logout"); } catch {}
+  window.location.href = "/login";
 });
 
 boot();
