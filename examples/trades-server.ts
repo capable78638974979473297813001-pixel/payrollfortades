@@ -22,7 +22,14 @@ import {
   getJob,
   getWorkerProfile,
   jobsForCompany,
+  billingConfigured,
+  createCheckoutSession,
   monthlyBill,
+  parseStripeEvent,
+  paymentsForCompany,
+  publicOrigin,
+  recordCompletedCheckout,
+  BillingNotConfiguredError,
   saveJob,
   saveWageDetermination,
   saveWorkerProfile,
@@ -589,6 +596,56 @@ const server = createServer(async (req, res) => {
       const company = getCompany(companyId);
       const active = company ? activeEmployeesFor(company, employeesForCompany(companyId), asOf) : [];
       return sendJson(res, 200, { asOf, ...monthlyBill(active.length) });
+    }
+
+    // Collecting the bill: the owner pays this month's invoice by card at
+    // Stripe Checkout; the webhook (below) records the receipt when it lands.
+    // Owner-only, and honest when the Stripe keys aren't in yet.
+    const checkoutMatch = path.match(/^\/api\/companies\/([^/]+)\/billing\/checkout$/);
+    if (method === 'POST' && checkoutMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can pay the bill.' });
+      const companyId = decodeURIComponent(checkoutMatch[1]);
+      const company = getCompany(companyId);
+      if (!company) return sendJson(res, 404, { error: `No company "${companyId}".` });
+      const asOf = new Date().toISOString().slice(0, 10);
+      const active = activeEmployeesFor(company, employeesForCompany(companyId), asOf);
+      if (active.length === 0) return sendJson(res, 400, { error: 'No active crew to bill — add a worker first.' });
+      const bill = monthlyBill(active.length);
+      const origin = publicOrigin(PORT);
+      const session = await createCheckoutSession({
+        companyId,
+        shopName: company.legalName,
+        ownerEmail: user.email,
+        headcount: bill.headcount,
+        perEmployeeCents: bill.perEmployeeCents,
+        successUrl: `${origin}/owner?billing=paid`,
+        cancelUrl: `${origin}/owner?billing=cancelled`,
+      });
+      return sendJson(res, 200, { url: session.url, sessionId: session.sessionId, bill });
+    }
+
+    const billingPaymentsMatch = path.match(/^\/api\/companies\/([^/]+)\/billing\/payments$/);
+    if (method === 'GET' && billingPaymentsMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can see payments.' });
+      return sendJson(res, 200, { payments: paymentsForCompany(decodeURIComponent(billingPaymentsMatch[1])) });
+    }
+
+    // Stripe → us. The raw body is what the signature covers, so it's read
+    // as text, not parsed JSON. A 200 tells Stripe to stop redelivering.
+    if (method === 'POST' && path === '/api/billing/webhook') {
+      const raw = await readBody(req);
+      try {
+        const event = parseStripeEvent(raw, req.headers['stripe-signature'] ?? null);
+        const payment = recordCompletedCheckout(event);
+        return sendJson(res, 200, { received: true, recorded: payment != null });
+      } catch (err) {
+        if (err instanceof BillingNotConfiguredError) return sendJson(res, 503, { error: err.message });
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : 'Webhook rejected.' });
+      }
     }
 
     // The check register — every check this shop owes its crew, past and

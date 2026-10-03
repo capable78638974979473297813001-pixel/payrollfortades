@@ -87,6 +87,16 @@ export type { NudgeCandidate, NudgeSendResult, NudgeSender, NudgeWorker } from '
 
 export { PER_EMPLOYEE_CENTS, monthlyBill } from './billing.ts';
 export type { Bill } from './billing.ts';
+export {
+  BillingNotConfiguredError,
+  billingConfigured,
+  createCheckoutSession,
+  parseStripeEvent,
+  paymentsForCompany,
+  publicOrigin,
+  recordCompletedCheckout,
+} from './checkout.ts';
+export type { BillingPayment, StripeCheckoutInput } from './checkout.ts';
 
 export { DeterminationImportError, normalizeDetermination, slugifyClassification } from './importDetermination.ts';
 export type { DeterminationExport, DeterminationExportRow } from './importDetermination.ts';

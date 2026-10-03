@@ -70,6 +70,19 @@
     border-radius: 999px; padding: 6px 14px; font-size: 13.5px; font-weight: 600; box-shadow: 2px 2px 0 var(--ink);
   }
   .bill-pill .amt { color: var(--clay); }
+  .bill-pill { cursor: pointer; }
+  .bill-pill:hover { border-color: var(--clay); box-shadow: 2px 2px 0 var(--clay); }
+  .bill-pill.busy { opacity: .6; pointer-events: none; }
+  .bill-pill .paylbl { color: var(--pine); font-weight: 700; }
+  .bill-pill .paidchip { color: var(--pine); }
+  .bill-pill .paidchip.hidden { display: none; }
+  .toast {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 100;
+    background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 999px;
+    font-weight: 600; font-size: 14px; box-shadow: 3px 3px 0 rgba(33,29,23,.35); max-width: 92vw;
+  }
+  .toast.bad { background: var(--brick); }
+  .toast.ok { background: var(--pine); }
 
   /* ---------- tabs ---------- */
   nav.tabs { max-width: 940px; margin: 0 auto; padding: 14px 18px 0; display: flex; gap: 8px; }
@@ -258,6 +271,7 @@
     .tag { display: none; }
     .crew-link { display: none; }
     .bill-pill { padding: 5px 11px; font-size: 12.5px; box-shadow: 1.5px 1.5px 0 var(--ink); }
+    .bill-pill .paylbl { display: none; }
 
     nav.tabs { display: none; }
     main { padding: 16px 14px calc(80px + env(safe-area-inset-bottom)); }
@@ -309,8 +323,10 @@
       </span>
     </a>
     <a class="crew-link" href="/login" id="logoutLink" title="Sign out">Log out ↗</a>
-    <div class="bill-pill" id="billPill" title="Your plan">
+    <div class="bill-pill" id="billPill" title="Your monthly bill — click to pay by card">
       <span id="billCrew">—</span> crew · <span class="amt tnum" id="billAmt">—</span>/mo
+      <span id="billPaid" class="paidchip hidden" title="Last card payment received">✓</span>
+      <span class="paylbl">Pay ›</span>
     </div>
   </div>
   <nav class="tabs">
@@ -693,8 +709,31 @@ async function loadBilling() {
     const b = await api("GET", `/api/companies/${COMPANY}/billing?asOf=${WEEK.checkDate}`);
     $("billCrew").textContent = b.headcount;
     $("billAmt").textContent = money(b.totalCents);
+    const { payments } = await api("GET", `/api/companies/${COMPANY}/billing/payments`).catch(() => ({ payments: [] }));
+    $("billPaid").classList.toggle("hidden", !payments.length);
+    $("billPaid").title = payments.length ? `Last card payment: ${money(payments[0].amountCents)} on ${payments[0].paidAt.slice(0, 10)}` : "";
   } catch {}
 }
+
+// ---- paying the bill: Stripe Checkout opens, the webhook records the receipt ----
+function toast(msg, kind) {
+  const t = document.createElement("div");
+  t.className = "toast " + (kind || "");
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+}
+async function payBill() {
+  const pill = $("billPill");
+  if (pill.dataset.busy) return;
+  pill.dataset.busy = "1"; pill.classList.add("busy");
+  try {
+    const { url } = await api("POST", `/api/companies/${COMPANY}/billing/checkout`);
+    window.location.href = url;
+  } catch (e) { toast(e.message, "bad"); }
+  delete pill.dataset.busy; pill.classList.remove("busy");
+}
+$("billPill").addEventListener("click", payBill);
 
 // ---- add worker ----
 $("wType").addEventListener("change", (e) => $("wEndWrap").classList.toggle("hidden", e.target.value !== "seasonal"));
@@ -996,6 +1035,12 @@ $("logoutLink").addEventListener("click", async (ev) => {
   loadAll().catch(() => {});
   loadChecks().catch(() => {});
   showPayStep(1);
+  // Back from Stripe Checkout: say what happened and drop the query string.
+  const came = new URLSearchParams(window.location.search).get("billing");
+  if (came) {
+    history.replaceState(null, "", "/owner");
+    toast(came === "paid" ? "Thanks — your card payment is recorded." : "Payment cancelled — the bill is still there whenever you're ready.", came === "paid" ? "ok" : "bad");
+  }
 })();
 </script>
 </body>

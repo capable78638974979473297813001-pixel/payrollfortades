@@ -9,5 +9,15 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=development
+      # The checkout redirect back to /owner needs the absolute public origin.
+      - BASE44_PUBLIC_HOST_SUFFIX
+    env_file:
+      - /run/base44/app.env   # platform secrets (Stripe keys) — always LAST, always wins
     command: node --watch examples/trades-server.ts
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: on-failure
