@@ -2,5 +2,8 @@
   "previewPort": 3000,
   "healthPath": "/",
   "startCommand": "docker compose -f docker-compose.base44.yml up -d",
-  "secrets": []
+  "secrets": [
+    { "name": "STRIPE_SECRET_KEY", "description": "Stripe secret key (sk_live_…/sk_test_…) from Stripe Dashboard → Developers → API keys — used to open Checkout sessions for the $5/employee monthly bill.", "requiredAtBoot": false },
+    { "name": "STRIPE_WEBHOOK_SECRET", "description": "Stripe webhook signing secret (whsec_…) for the endpoint /api/billing/webhook (checkout.session.completed) — verifies received payments.", "requiredAtBoot": false }
+  ]
 }

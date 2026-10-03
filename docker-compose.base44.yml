@@ -12,7 +12,9 @@ services:
       # The checkout redirect back to /owner needs the absolute public origin.
       - BASE44_PUBLIC_HOST_SUFFIX
     env_file:
-      - /run/base44/app.env   # platform secrets (Stripe keys) — always LAST, always wins
+      # platform secrets (Stripe keys) — always LAST, always wins; optional until the user adds them
+      - path: /run/base44/app.env
+        required: false
     command: node --watch examples/trades-server.ts
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/"]
