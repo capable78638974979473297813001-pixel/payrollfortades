@@ -186,6 +186,49 @@
   .alert-row .txt b { font-weight: 700; }
   @media (max-width: 640px) { .stats { grid-template-columns: 1fr 1fr; } .stat .v { font-size: 34px; } }
 
+  /* ---------- payroll wizard steps ---------- */
+  .stepper { display: flex; gap: 8px; margin-bottom: 18px; }
+  .stepper .pstep {
+    flex: 1; display: flex; align-items: center; gap: 9px; background: var(--card);
+    border: 2px solid var(--line2); border-radius: 10px; padding: 10px 12px;
+    font-weight: 700; color: var(--ink3); font-size: 14px; cursor: pointer; text-align: left;
+  }
+  .stepper .pstep .n { width: 24px; height: 24px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--paper2); font-family: var(--disp); font-weight: 700; }
+  .stepper .pstep.on { border-color: var(--ink); color: var(--ink); box-shadow: 3px 3px 0 rgba(33,29,23,.09); }
+  .stepper .pstep.on .n { background: var(--clay); color: #fff; }
+  .stepper .pstep.done { border-color: var(--pine); color: var(--pine); }
+  .stepper .pstep.done .n { background: var(--pine); color: #fff; }
+
+  /* ---------- the check itself ---------- */
+  .modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; }
+  .modal.hidden { display: none; }
+  .modal-back { position: absolute; inset: 0; background: rgba(33,29,23,.5); }
+  .modal-body { position: relative; max-width: 660px; width: calc(100% - 28px); max-height: 90vh; overflow: auto; }
+  .checkpaper { background: var(--card); border: 2px solid var(--ink); border-radius: 6px; padding: 20px; box-shadow: 6px 7px 0 rgba(33,29,23,.2); position: relative; overflow: hidden; }
+  .checkpaper::before { content: "✂"; position: absolute; top: -20px; left: 10px; font-size: 17px; color: var(--ink3); }
+  .cp-head { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1.5px solid var(--line); }
+  .cp-head .co { font-family: var(--disp); font-weight: 700; font-size: 19px; }
+  .cp-no { text-align: right; font-weight: 700; color: var(--clay); font-size: 17px; font-family: var(--disp); }
+  .cp-rows { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 16px 0 6px; align-items: end; }
+  .cp-payto { font-size: 14px; letter-spacing: .02em; color: var(--ink2); }
+  .cp-payto b { display: block; font-family: var(--disp); font-size: 19px; letter-spacing: .01em; color: var(--ink); margin-top: 2px; }
+  .cp-amtbox { border: 2px solid var(--ink); border-radius: 8px; padding: 8px 14px; font-family: var(--disp); font-weight: 700; font-size: 22px; white-space: nowrap; }
+  .cp-amtline { border-bottom: 1.5px solid var(--line2); padding: 2px 0 8px; color: var(--ink2); font-size: 13.5px; }
+  .cp-foot { display: flex; justify-content: space-between; align-items: end; gap: 14px; margin-top: 18px; }
+  .cp-memo { color: var(--ink2); font-size: 13px; max-width: 55%; }
+  .cp-sig { text-align: right; }
+  .cp-sig svg { display: block; margin-left: auto; }
+  .cp-sig .line { border-top: 1.5px solid var(--ink); padding-top: 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink3); }
+  .paid-stamp {
+    position: absolute; top: 14px; right: 14px; transform: rotate(-8deg);
+    border: 3px solid var(--pine); color: var(--pine); font-family: var(--disp); font-weight: 700;
+    font-size: 15px; letter-spacing: .12em; text-transform: uppercase; border-radius: 8px;
+    padding: 2px 10px; opacity: .85; background: rgba(227,238,228,.7);
+  }
+  .check-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .checkrow { cursor: pointer; }
+  .checkrow:hover td { background: var(--pine-s) !important; }
+
   /* ---------- bottom tab bar (phones) ---------- */
   nav.botnav { display: none; }
   @media (max-width: 640px) {
@@ -238,6 +281,13 @@
     .radar { width: 130px; height: 130px; margin: 0 auto; }
     #clockInBtn, #clockOutBtn { flex: 1 1 44%; }
     .linkish { font-size: 14.5px; padding: 9px 0; }
+
+    /* wizard + checks on phones */
+    .stepper .pstep { padding: 8px 8px; font-size: 12px; gap: 6px; }
+    .cp-foot { flex-direction: column; align-items: flex-start; }
+    .cp-sig { text-align: left; }
+    .cp-sig svg { margin-left: 0; }
+    .check-actions .btn { flex: 1 1 100%; }
   }
 </style>
 </head>
@@ -268,6 +318,7 @@
     <button class="tab" data-view="crew">Crew</button>
     <button class="tab" data-view="clock">Time Clock</button>
     <button class="tab" data-view="pay">Payroll</button>
+    <button class="tab" data-view="checks">Checks</button>
   </nav>
 </header>
 
@@ -373,8 +424,14 @@
     </div>
   </section>
 
-  <!-- ======================= PAYROLL ======================= -->
+  <!-- ======================= PAYROLL (3-step wizard) ======================= -->
   <section class="view" id="view-pay">
+    <div class="stepper" id="payStepper">
+      <button class="pstep on" data-step="1"><span class="n">1</span> Hours</button>
+      <button class="pstep" data-step="2"><span class="n">2</span> Checks</button>
+      <button class="pstep" data-step="3"><span class="n">3</span> Approve</button>
+    </div>
+    <div id="pstep1">
     <div class="card">
       <p class="eyebrow">Step 1 · tracked this week</p>
       <h2>Hours</h2>
@@ -391,10 +448,12 @@
       </div>
     </div>
 
-    <button class="btn big" id="runBtn" disabled>Run payroll</button>
+    <button class="btn big" id="runBtn" disabled>Run payroll &amp; review checks →</button>
     <div id="payErr"></div>
+    </div>
 
-    <div id="results" class="hidden" style="margin-top:22px">
+    <div id="pstep2" class="hidden">
+    <div id="results" class="hidden" style="margin-top:0">
       <div id="banner"></div>
 
       <div class="card">
@@ -426,10 +485,40 @@
         <div id="cprBody"></div>
       </div>
 
-      <button class="btn pine big" id="approveBtn">Approve &amp; finalize</button>
-      <div id="approveMsg"></div>
+      <div class="row">
+        <button class="btn ghost" id="backTo1Btn">← Back to hours</button>
+        <button class="btn big pine" id="toApproveBtn" style="flex:1">Approve &amp; finalize →</button>
+      </div>
+    </div>
+    </div>
+
+    <div id="pstep3" class="hidden">
+      <div class="card">
+        <p class="eyebrow">Step 3 · commit the week</p>
+        <h2>Approve &amp; finalize</h2>
+        <p class="lede">Approving commits every check to the crew's year-to-date totals and files the run in the <b>Checks</b> register. A check's numbers never change once approved — look them over on step 2 first.</p>
+        <button class="btn pine big" id="approveBtn">Approve &amp; finalize</button>
+        <div id="approveMsg"></div>
+      </div>
     </div>
   </section>
+
+  <!-- ======================= CHECKS (register) ======================= -->
+  <section class="view" id="view-checks">
+    <div class="card">
+      <p class="eyebrow">The check register</p>
+      <h2>Checks to send</h2>
+      <p class="lede">Every paycheck this shop owes — this week and every past week. Click one to see the actual check and record the payment when the money moves.</p>
+      <div id="checksSummary" style="margin-bottom:12px"></div>
+      <div id="checksList"><p class="empty">Run payroll first — checks land here the moment a week is calculated.</p></div>
+    </div>
+  </section>
+
+  <!-- the check itself, opened from the payroll results or the register -->
+  <div class="modal hidden" id="checkModal">
+    <div class="modal-back" id="checkModalBack"></div>
+    <div class="modal-body" id="checkModalBody"></div>
+  </div>
 
   <p class="foot">Runs on your machine · penny-accurate integer math · built for plumbers, electricians &amp; HVAC on public work · <b>$5/employee/month</b></p>
 </main>
@@ -451,6 +540,10 @@
     <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4"/><path d="M12 10.5c-1.4 0-2.2.7-2.2 1.6 0 2 4.4 1 4.4 3 0 .9-.8 1.6-2.2 1.6M12 10.5c1 0 1.7.3 2 .9M12 10.5V9m0 9.2v-1.5m0 1.5c-1 0-1.7-.3-2-.9"/></svg>
     <span>Pay</span>
   </button>
+  <button class="bn" data-view="checks">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18v12H3z"/><path d="M3 8l2.5-4h13L21 8"/><path d="M7 12h6v4H7z"/><path d="M17 12.5v4"/></svg>
+    <span>Checks</span>
+  </button>
 </nav>
 
 <script>
@@ -468,6 +561,7 @@ function currentWeek() {
 }
 let COMPANY = "", WEEK = DEMO_WEEK, IS_DEMO = true;
 let crew = [], jobs = [], jobById = {}, crewNames = {}, lastRunId = null;
+let checks = [], checkNumbers = new Map(), payResults = null, SHOP_NAME = "your shop";
 async function auth() {
   try {
     const res = await fetch("/api/auth/me");
@@ -496,6 +590,7 @@ function showView(view) {
   document.querySelectorAll(".tab, .botnav .bn").forEach((x) => x.classList.toggle("on", x.dataset.view === view));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === "view-" + view));
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (view === "checks") loadChecks().catch(() => {});
 }
 document.querySelectorAll(".tab, .botnav .bn").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
 
@@ -662,9 +757,10 @@ $("runBtn").addEventListener("click", async () => {
     const wc = parseFloat($("wcRate").value);
     const payload = { ...WEEK, employeeId: $("hWorker").value }; if (wc > 0) payload.wcRatePerHundred = wc;
     const data = await api("POST", `/api/companies/${COMPANY}/run-week`, payload);
+    payResults = data;
     renderResults(data);
-    $("results").classList.remove("hidden");
-    $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+    showPayStep(2);
+    loadChecks().catch(() => {});
   } catch (e) { showErr("payErr", e.message); }
   finally { b.disabled = false; b.textContent = "Run payroll"; }
 });
@@ -685,7 +781,7 @@ function renderResults(data) {
     const hrs = (h.straight || h.overtime || h.doubleTime)
       ? `${h.straight}h${h.overtime ? ` + ${h.overtime}h OT` : ""}${h.doubleTime ? ` + ${h.doubleTime}h DT` : ""}`
       : "—";
-    return `<tr><td>${esc(who(l.employeeId))}</td><td class="tnum">${hrs}</td><td class="r tnum">${money(l.grossPay)}</td><td class="r tnum">${money(l.netPay)}</td></tr>`;
+    return `<tr class="checkrow" data-emp="${esc(l.employeeId)}"><td><b>${esc(who(l.employeeId))}</b><div class="linkish" style="padding:0">View check →</div></td><td class="tnum">${hrs}</td><td class="r tnum">${money(l.grossPay)}</td><td class="r tnum">${money(l.netPay)}</td></tr>`;
   }).join("");
 
   // Overtime, made visible: hours over 40 this week, priced at 1.5× on the
@@ -733,9 +829,140 @@ $("approveBtn").addEventListener("click", async () => {
   b.disabled = true; b.innerHTML = `<span class="spin"></span> Finalizing…`;
   try {
     const out = await api("POST", `/api/runs/${lastRunId}/approve`, {});
-    $("approveMsg").innerHTML = `<div class="banner good" style="margin-top:14px"><span class="ic">🎉</span><div><div class="h">Payroll finalized</div><div>${out.employeesUpdated} paycheck(s) committed; year-to-date totals updated.</div></div></div>`;
+    $("approveMsg").innerHTML = `<div class="banner good" style="margin-top:14px"><span class="ic">🎉</span><div><div class="h">Payroll finalized</div><div>${out.employeesUpdated} paycheck(s) committed; year-to-date totals updated.</div></div></div><button class="btn big" id="toChecksBtn" style="margin-top:12px">Open the check register →</button>`;
+    $("toChecksBtn").addEventListener("click", () => showView("checks"));
+    loadChecks().catch(() => {});
   } catch (e) { showErr("approveMsg", e.message); }
   finally { b.disabled = false; b.textContent = "Approve & finalize"; }
+});
+
+// ---- payroll wizard: 1 Hours → 2 Checks → 3 Approve ----
+let payStep = 1;
+function showPayStep(n) {
+  payStep = n;
+  document.querySelectorAll("#payStepper .pstep").forEach((s) => {
+    const k = Number(s.dataset.step);
+    s.classList.toggle("on", k === n);
+    s.classList.toggle("done", k < n);
+  });
+  $("pstep1").classList.toggle("hidden", n !== 1);
+  $("pstep2").classList.toggle("hidden", n !== 2);
+  $("pstep3").classList.toggle("hidden", n !== 3);
+  $("results").classList.toggle("hidden", n !== 2);
+}
+document.querySelectorAll("#payStepper .pstep").forEach((s) => s.addEventListener("click", () => {
+  const k = Number(s.dataset.step);
+  if (k === 1 || (lastRunId && (k === 2 || k === 3))) showPayStep(k);
+}));
+$("backTo1Btn").addEventListener("click", () => showPayStep(1));
+$("toApproveBtn").addEventListener("click", () => showPayStep(3));
+
+// ---- the check register (trades/checks.ts via /checks) ----
+const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+async function loadChecks() {
+  try { checks = (await api("GET", `/api/companies/${COMPANY}/checks`)).checks; renderChecks(); } catch {}
+}
+function numberChecks() {
+  const asc = [...checks].sort((a, b) => (a.checkDate + a.employeeId).localeCompare(b.checkDate + b.employeeId));
+  checkNumbers = new Map(asc.map((c, i) => [c.id, i + 1]));
+}
+const checkNumber = (c) => { const n = checkNumbers.get(c.id); return n ? String(n).padStart(3, "0") : "—"; };
+function renderChecks() {
+  numberChecks();
+  const unpaid = checks.filter((c) => !c.paid);
+  const total = unpaid.reduce((s, c) => s + c.netPayCents, 0);
+  $("checksSummary").innerHTML = checks.length
+    ? `<span class="chip ${unpaid.length ? "off" : "on"}">${unpaid.length ? unpaid.length + " check(s) to send · " + money(total) : "✓ all paid"}</span>`
+    : "";
+  $("checksList").innerHTML = checks.length
+    ? `<table><thead><tr><th>#</th><th>Worker</th><th>Period</th><th class="r">Check date</th><th class="r">Net</th><th>Status</th><th></th></tr></thead><tbody>${checks.map((c) => `<tr>
+        <td class="tnum">#${checkNumber(c)}</td>
+        <td><b>${esc(who(c.employeeId))}</b>${c.runStatus === "draft" ? ' <span class="empty">· draft</span>' : ""}</td>
+        <td class="empty">${esc(fmtDate(c.periodStart))}–${esc(fmtDate(c.periodEnd))}</td>
+        <td class="r empty">${esc(c.checkDate)}</td>
+        <td class="r tnum"><b>${money(c.netPayCents)}</b></td>
+        <td>${c.paid ? `<span class="chip on">✓ Paid</span>` : `<span class="chip off">To send</span>`}</td>
+        <td class="r"><button class="btn ghost sm" data-check="${esc(c.id)}">View</button></td>
+      </tr>`).join("")}</tbody></table>`
+    : `<p class="empty">Run payroll first — checks land here the moment a week is calculated.</p>`;
+  document.querySelectorAll("#checksList [data-check]").forEach((b) => b.addEventListener("click", () => {
+    const c = checks.find((x) => x.id === b.dataset.check);
+    if (c) openCheck(c);
+  }));
+}
+// A check viewed straight off the payroll results — joined to the register
+// entry when one already exists, so its paid state is never invented.
+function checkFromLine(l) {
+  return checks.find((c) => c.employeeId === l.employeeId && c.periodStart === WEEK.periodStart && c.periodEnd === WEEK.periodEnd) || {
+    id: `${COMPANY}:${l.employeeId}:${WEEK.periodStart}:${WEEK.periodEnd}`,
+    runId: lastRunId, companyId: COMPANY, employeeId: l.employeeId,
+    periodStart: WEEK.periodStart, periodEnd: WEEK.periodEnd, checkDate: WEEK.checkDate,
+    grossPayCents: l.grossPay, netPayCents: l.netPay, runStatus: "draft",
+    paid: false, method: null, paidAt: null,
+  };
+}
+function renderCheckPaper(c) {
+  const methodLabel = c.method === "paper-check" ? "paper check" : c.method === "direct-deposit" ? "direct deposit" : "";
+  return `<div class="checkpaper">
+    ${c.paid ? `<div class="paid-stamp">Paid ✓</div>` : ""}
+    <div class="cp-head">
+      <div><div class="co">${esc(SHOP_NAME)}</div><div class="empty">Crewtally payroll account</div></div>
+      <div class="cp-no">CHECK #${checkNumber(c)}<div class="empty" style="font-weight:400;font-family:var(--body);font-size:12px">Date ${esc(c.checkDate)}</div></div>
+    </div>
+    <div class="cp-rows">
+      <div class="cp-payto">PAY TO THE<br>ORDER OF<b>${esc(who(c.employeeId))}</b></div>
+      <div class="cp-amtbox tnum">${money(c.netPayCents)}</div>
+    </div>
+    <div class="cp-amtline">Gross <span class="tnum">${money(c.grossPayCents)}</span> · taxes &amp; deductions withheld — take-home above${c.runStatus === "draft" ? " · <b>draft</b> — approve to commit" : ""}</div>
+    <div class="cp-foot">
+      <div class="cp-memo">MEMO: Pay period ${esc(fmtDate(c.periodStart))}–${esc(fmtDate(c.periodEnd))}${c.paid ? ` · paid ${esc((c.paidAt || "").slice(0, 10))} via ${methodLabel}` : ""}</div>
+      <div class="cp-sig"><svg width="150" height="26" viewBox="0 0 150 26" fill="none" aria-hidden="true"><path d="M4 18c14-14 20-14 26-6s10 6 18-6 18-10 24 0 16 8 26-4" stroke="#211D17" stroke-width="1.8" stroke-linecap="round"/></svg><div class="line">Authorized signature</div></div>
+    </div>
+  </div>`;
+}
+function closeCheck() { $("checkModal").classList.add("hidden"); }
+function openCheck(c) {
+  $("checkModalBody").innerHTML = renderCheckPaper(c) +
+    `<div class="check-actions">${c.paid
+      ? `<button class="btn ghost sm" id="unpayBtn">Mark unpaid</button>`
+      : `<button class="btn sm" id="payDDBtn">Paid · Direct deposit</button><button class="btn pine sm" id="payChkBtn">Paid · Paper check</button>`}
+      <button class="btn ghost sm" id="closeCheckBtn">Done</button></div><div id="checkErr"></div>`;
+  $("checkModal").classList.remove("hidden");
+  $("checkModalBack").onclick = closeCheck;
+  $("closeCheckBtn").onclick = closeCheck;
+  const setErr = (e) => { $("checkErr").innerHTML = `<div class="err">${esc(e.message)}</div>`; };
+  const save = async (method) => {
+    try {
+      const { check } = await api("POST", `/api/companies/${COMPANY}/checks/pay`,
+        { employeeId: c.employeeId, periodStart: c.periodStart, periodEnd: c.periodEnd, method });
+      Object.assign(c, check);
+      const saved = checks.find((x) => x.id === c.id);
+      if (saved) Object.assign(saved, c);
+      renderChecks();
+      openCheck(c);
+    } catch (e) { setErr(e); }
+  };
+  const unpay = async () => {
+    try {
+      await api("POST", `/api/companies/${COMPANY}/checks/pay`,
+        { employeeId: c.employeeId, periodStart: c.periodStart, periodEnd: c.periodEnd, paid: false });
+      c.paid = false; c.method = null; c.paidAt = null;
+      const saved = checks.find((x) => x.id === c.id);
+      if (saved) Object.assign(saved, c);
+      renderChecks();
+      openCheck(c);
+    } catch (e) { setErr(e); }
+  };
+  if ($("payDDBtn")) $("payDDBtn").onclick = () => save("direct-deposit");
+  if ($("payChkBtn")) $("payChkBtn").onclick = () => save("paper-check");
+  if ($("unpayBtn")) $("unpayBtn").onclick = unpay;
+}
+// The Paychecks table on step 2: click a row, see the actual check.
+$("payBody").addEventListener("click", (ev) => {
+  const tr = ev.target.closest("tr.checkrow");
+  if (!tr || !payResults) return;
+  const line = payResults.run.lines.find((l) => l.employeeId === tr.dataset.emp);
+  if (line) openCheck(checkFromLine(line));
 });
 
 // ---- seed + boot ----
@@ -760,13 +987,15 @@ $("logoutLink").addEventListener("click", async (ev) => {
   COMPANY = me.user.companyId;
   IS_DEMO = !!me.demo;
   WEEK = IS_DEMO ? DEMO_WEEK : currentWeek();
-  const fd = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  $("payWeekLabel").textContent = `${fd(WEEK.periodStart)}–${fd(WEEK.periodEnd)}, ${WEEK.periodEnd.slice(0, 4)}`;
-  $("payCheckLabel").textContent = fd(WEEK.checkDate);
-  $("shopTag").textContent = `Owner · ${me.company ? me.company.name : "your shop"}`;
+  SHOP_NAME = me.company ? me.company.name : "your shop";
+  $("payWeekLabel").textContent = `${fmtDate(WEEK.periodStart)}–${fmtDate(WEEK.periodEnd)}, ${WEEK.periodEnd.slice(0, 4)}`;
+  $("payCheckLabel").textContent = fmtDate(WEEK.checkDate);
+  $("shopTag").textContent = `Owner · ${SHOP_NAME}`;
   $("joinCode").textContent = me.joinCode;
   if (!IS_DEMO) ["seedBtn", "seedBtn2"].forEach((id) => $(id)?.closest(".card").classList.add("hidden"));
   loadAll().catch(() => {});
+  loadChecks().catch(() => {});
+  showPayStep(1);
 })();
 </script>
 </body>

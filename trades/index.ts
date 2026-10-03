@@ -159,6 +159,9 @@ export {
   weeklyComplianceReport,
   weeklyJobCosts,
 } from './service.ts';
+
+export { checksForCompany, setCheckPaid } from './checks.ts';
+export type { CheckRecord, PaymentMethod } from './checks.ts';
 export type { TradesRunRequest } from './service.ts';
 
 export {

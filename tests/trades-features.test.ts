@@ -1,13 +1,20 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { savePayRun } from '../payroll/store.ts';
+import type { PayRunLine } from '../payroll/types.ts';
 
 import {
+  checksForCompany,
   computeMissingHoursNudges,
   consoleNudgeSender,
   distanceMeters,
   monthlyBill,
   renderNudgeText,
   sendNudges,
+  setCheckPaid,
   verifyClockIn,
   type Job,
   type NudgeWorker,
@@ -89,5 +96,68 @@ describe('per-employee billing (trades/billing.ts)', () => {
   test('a zero or negative headcount bills nothing', () => {
     assert.equal(monthlyBill(0).totalCents, 0);
     assert.equal(monthlyBill(-4).totalCents, 0);
+  });
+});
+
+// ============================================================================
+// The check register (trades/checks.ts)
+// ============================================================================
+
+describe('the check register (trades/checks.ts)', () => {
+  let payrollDir: string;
+  let checksDir: string;
+
+  const line = (employeeId: string, grossPay: number, netPay: number): PayRunLine => ({
+    employeeId, grossPay, netPay, employeeTaxTotal: 0, employerTaxTotal: 0,
+    pretaxDeductions: 0, posttaxDeductions: 0, garnishmentTotal: 0,
+    netPayAfterGarnishment: netPay, taxLines: [], garnishmentLines: [], depositAllocations: [],
+  });
+  const run = (id: string, periodStart: string, periodEnd: string, checkDate: string, status: 'draft' | 'approved', createdAt: string, lines: PayRunLine[]) =>
+    ({ id, companyId: 'co_ck', periodStart, periodEnd, checkDate, status, lines, createdAt, minimumWageIssues: [] });
+
+  before(() => {
+    payrollDir = mkdtempSync(join(tmpdir(), 'payroll-checks-'));
+    checksDir = mkdtempSync(join(tmpdir(), 'checks-store-'));
+    process.env.PAYROLL_DB_DIR = payrollDir;
+    process.env.CREWTALLY_CHECKS_DB_DIR = checksDir;
+    // The same period drafted twice: the approved run's numbers are the truth.
+    savePayRun(run('run-a', '2026-01-04', '2026-01-10', '2026-01-14', 'approved', '2026-01-11T00:00:00Z', [line('emp-a', 1000, 800), line('emp-b', 900, 700)]));
+    savePayRun(run('run-b', '2026-01-04', '2026-01-10', '2026-01-14', 'draft', '2026-01-12T00:00:00Z', [line('emp-a', 1200, 950)]));
+    // A past period — still in the register — and a voided run, which isn't.
+    savePayRun(run('run-c', '2025-12-28', '2026-01-03', '2026-01-07', 'draft', '2026-01-04T00:00:00Z', [line('emp-a', 1100, 880)]));
+    savePayRun(run('run-d', '2025-12-21', '2025-12-27', '2025-12-31', 'voided', '2025-12-29T00:00:00Z', [line('emp-a', 999, 999)]));
+  });
+  after(() => {
+    delete process.env.PAYROLL_DB_DIR;
+    delete process.env.CREWTALLY_CHECKS_DB_DIR;
+    rmSync(payrollDir, { recursive: true, force: true });
+    rmSync(checksDir, { recursive: true, force: true });
+  });
+
+  test('one check per worker per period; the approved run beats a newer draft', () => {
+    const checks = checksForCompany('co_ck');
+    const week1 = checks.filter((c) => c.periodStart === '2026-01-04');
+    assert.deepEqual(week1.map((c) => c.employeeId).sort(), ['emp-a', 'emp-b']);
+    assert.equal(week1.find((c) => c.employeeId === 'emp-a')!.netPayCents, 800, 'approved numbers, not the newer draft’s');
+    assert.equal(week1.every((c) => c.runId === 'run-a'), true);
+  });
+
+  test('past periods still list their checks; a voided run lists none', () => {
+    const checks = checksForCompany('co_ck');
+    assert.ok(checks.some((c) => c.periodStart === '2025-12-28'), 'a past period’s checks stay in the register');
+    assert.ok(!checks.some((c) => c.periodStart === '2025-12-21'), 'a voided run is never a check');
+  });
+
+  test('marking a check paid persists — and survives a re-drafted run’s new id', () => {
+    const paid = setCheckPaid('co_ck', 'emp-b', '2026-01-04', '2026-01-10', 'paper-check');
+    assert.equal(paid?.paid, true);
+    assert.equal(paid?.method, 'paper-check');
+    assert.equal(checksForCompany('co_ck').find((c) => c.employeeId === 'emp-b' && c.periodStart === '2026-01-04')!.paid, true);
+    const unpaid = setCheckPaid('co_ck', 'emp-b', '2026-01-04', '2026-01-10', null);
+    assert.equal(unpaid?.paid, false);
+  });
+
+  test('a payment for a check no run names is refused', () => {
+    assert.equal(setCheckPaid('co_ck', 'emp-a', '2026-02-01', '2026-02-07', 'direct-deposit'), null);
   });
 });

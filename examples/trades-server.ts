@@ -44,6 +44,11 @@ import {
   type WorkersCompRating,
 } from '../trades/index.ts';
 import {
+  checksForCompany,
+  setCheckPaid,
+  type PaymentMethod,
+} from '../trades/checks.ts';
+import {
   AuthError,
   createSession,
   ensureDemoOwner,
@@ -584,6 +589,38 @@ const server = createServer(async (req, res) => {
       const company = getCompany(companyId);
       const active = company ? activeEmployeesFor(company, employeesForCompany(companyId), asOf) : [];
       return sendJson(res, 200, { asOf, ...monthlyBill(active.length) });
+    }
+
+    // The check register — every check this shop owes its crew, past and
+    // present (trades/checks.ts), and recording that a check was paid. Both
+    // owner-only: a worker never browses anyone's pay.
+    const checksMatch = path.match(/^\/api\/companies\/([^/]+)\/checks$/);
+    if (method === 'GET' && checksMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can see the check register.' });
+      return sendJson(res, 200, { checks: checksForCompany(decodeURIComponent(checksMatch[1])) });
+    }
+    const payCheckMatch = path.match(/^\/api\/companies\/([^/]+)\/checks\/pay$/);
+    if (method === 'POST' && payCheckMatch) {
+      const user = sessionUser(req);
+      if (!user) return sendJson(res, 401, { error: 'Sign in first.' });
+      if (user.role !== 'owner') return sendJson(res, 403, { error: 'Only the shop owner can record a payment.' });
+      const b = await readJson<{ employeeId?: string; periodStart?: string; periodEnd?: string; method?: string; paid?: boolean }>(req);
+      const paying = b.paid !== false;
+      const how = b.method;
+      if (paying && how !== 'direct-deposit' && how !== 'paper-check') {
+        return sendJson(res, 400, { error: 'Pick how the check is paid — "direct-deposit" or "paper-check".' });
+      }
+      const check = setCheckPaid(
+        decodeURIComponent(payCheckMatch[1]),
+        (b.employeeId ?? '').trim(),
+        (b.periodStart ?? '').trim(),
+        (b.periodEnd ?? '').trim(),
+        paying ? (how as PaymentMethod) : null,
+      );
+      if (!check) return sendJson(res, 404, { error: 'No such check in the register — run payroll for that worker and period first.' });
+      return sendJson(res, 200, { check });
     }
 
     // One call that runs the whole week: draft (persisted), compliance, certified
